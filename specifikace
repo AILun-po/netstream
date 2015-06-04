@@ -1,0 +1,84 @@
+Specikikace programu netstream
+==============================
+Program netstream bude sloužit k přenosu dat mezi jedním zdrojem a více cíli.
+Typické použití bude k přenosu hudby přehrávané na serveru k více klientům.
+
+Popis programu
+--------------
+Program bude číst z jednoho vstupu a data odtud přečtená bude zapisovat do
+několika výstupů. Vstupy i výstupy mohou být socket, roura, nebo soubor.
+Specifikace vstupů a výstupů se bude načítat z konfiguračního souboru. 
+Program bude moci běžet na popředí i jako démon a to i vícekrát současně.
+Program by měl být odolný proti přerušení spojení, po obnovení by ho měl být
+schopen znovu navázat.
+
+Popis konfiguračního souboru
+----------------------------
+Konfigurační soubor je ve formátu YAML. Jedná se o pole mapování. Každý prvek
+pole popisuje buď vstup nebo výstup. Vstup může být nejvýše jeden, počet výstupů
+je omezen konstantou MAX_OUTPUTS ve zdrojovém kódu.
+
+Povinné klíče pro každý prvek:
+- Direction	- input/output		- jde o vstup nebo výstup?
+- Type		- socket/file/std 	- typ zdroje/cíle
+
+Volitelné klíče pro každý prvek:
+- Retry		- yes/[no]/ignore	- obnovovat při chybě
+
+Povinné klíče pro Type:socket:
+- Name		- IP/hostname/*		- název protějšku
+- Port		- 			- číslo portu
+- Protocol	- TCP/UDP		- typ IP protokolu
+- Keepalive	- n			- posílat TCP keepalive každých n sekund
+
+Povinné klíče pro Type:file:
+- Name		- 			- jméno souboru
+
+Čtení konfiguračního souboru skončí s chybou, pokud:
+- konfigurační soubor je špatně formátován
+- v něterém bloku nejsou všechny potřebné klíče
+
+Pokud jsou některé klíče nadbytečné, jsou ignorovány.
+
+Popis přepínačů programu
+------------------------
+-c <file>	- kde hledat konfgurační soubor
+-d		- spustit jako démona
+-v [level]	- ukecanost
+-t		- pouze otestovat dostupnost sousedů a souborů z konfiguračního souboru
+
+Detailní popis funkcí programu
+------------------------------
+Po spuštění program načte konfigurační soubor. Následně otevře soubory a síťová
+spojení dle parametrů v konfiguračním souboru. Pokud se nějaký vstup či výstup
+nepodaří otevřít, program to ohlásí a a skončí. Pokud se všechny vstupy a
+výstupy otevřely úspěšně a program je spuštěn s přepínačem -t, pak všechny
+spojení a soubory uzavře a skončí úspěchem. Jinak v nekonečné smyčce čte vstup a
+zapisuje ho do jednotlivých výstupů. Pokud dojde na konec vstupu nebo při čtení
+nebo zápisu dojde k chybě, program ukončí spojení, uzavře soubory a skončí. 
+
+Zápis do jednotlivých socketů se děje paralelně, každý výstup má své vlákno,
+které se stará o zápis do socketu/souboru/...
+
+
+Popis konfiguračních parametrů
+------------------------------
+
+Pokud je u nějakého vstupu nebo výstupu nastaven klíč Retry na yes, pak při
+chybě při čtení/zápisu je daný soubor nebo socket uzavřen a program se ho snaží
+cyklicky znovu otevřít, dokud neuspěje. Mezi jednotlivými pokusy je časová
+prodleva.
+
+Pokud je u nějakého výstupu nastaven klíč Retry na ignore, pak při chybě při
+zápisu je daný soubor/socket uzavřen a program se jej dále nepoužívá.
+
+Pokud je vstup typu socket a Name je *, pak program přijme spojení na daném
+portu od jakéhokoli protějšku, jinak pouze od takového, jehož hostname nebo
+adresa odpovídá hodnotě klíče Name.
+
+Pokud má klíč Type hodnotu std, pak je čteno ze standardního vstupu respektive
+zapisováno na standardní výstup.
+
+Pokud má klíč Keepalive hodnotu 0, nebo chybí, použije se systémový keepalive
+interval. 
+
