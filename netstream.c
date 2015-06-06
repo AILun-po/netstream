@@ -2,9 +2,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+#include <err.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
 #include <yaml.h>
 #include <netinet/in.h>
 #include "netstream.h"
+
+#define READ_BUFFER_BLOCK_SIZE 1024
+#define WRITE_BUFFER_BLOCK_SIZE 1024
+#define WRITE_BUFFER_BLOCK_COUNT 128
+
 
 struct cmd_args args;
 struct io_cfg config;
@@ -19,6 +30,48 @@ void help(void){
 	printf("	-d		- run as a daemon\n");
 	printf("	-v [level]	- set verbosity (0 quiet, 7 maximum)\n");
 	printf("	-t		- only load config and test neigbours reachability\n");
+}
+
+int buffer_insert(struct buffer * buf,char * data){
+	pthread_mutex_lock(&buf->lock);
+	// Buffer is full, discard data 
+	if ((buf->prod_pos+1)%buf->nitems == buf->cons_pos){
+		pthread_mutex_unlock(&buf->lock);
+		return -1;
+	}
+	memcpy(buf->buffer+buf->prod_pos*buf->it_size,
+		data,buf->it_size);
+	// Buffer was empty, signal a condition variable
+	if ((buf->cons_pos+1)%buf->nitems == buf->prod_pos){
+		pthread_cond_broadcast(&buf->empty_cv);
+	}
+	buf->prod_pos = (buf->prod_pos+1)%buf->nitems;
+	pthread_mutex_unlock(&buf->lock);
+	return 0;
+}
+
+char * buffer_get_data_pointer(struct buffer * buf){
+	pthread_mutex_lock(&buf->lock);
+	char * result;
+	result = buf->buffer+buf->prod_pos*buf->it_size;
+	pthread_mutex_unlock(&buf->lock);	
+	return result;
+
+}
+
+int buffer_after_delete(struct buffer * buf){
+	int result;
+	result = 0;
+	pthread_mutex_lock(&buf->lock);
+	// Buffer is empty, wait until is filled
+	if ((buf->cons_pos+1)%buf->nitems == buf->prod_pos){
+		pthread_cond_wait(&buf->empty_cv,&buf->lock);
+		result = -1;
+	}
+	buf->cons_pos = (buf->cons_pos+1)%buf->nitems;
+	pthread_mutex_unlock(&buf->lock);
+	return result;
+
 }
 
 void endpt_config_init(struct endpt_cfg * config){
@@ -301,6 +354,116 @@ int check_config(struct io_cfg * config){
 	return 1;
 }
 
+struct endpt_cfg * get_read_endpt(struct io_cfg * cfg){
+	for (int i=0;i<cfg->n_endpts;i++){
+		if (cfg->endpts[i].dir == DIR_INPUT)
+			return &cfg->endpts[i];
+	}
+	return NULL;
+	
+}
+
+int read_endpt(struct endpt_cfg * cfg){
+	int readfd;
+	if (cfg->type == T_FILE){
+		readfd = open(cfg->name,O_RDONLY);
+		if (readfd==-1){
+			err(1,"Error while opening %s for reading",cfg->name);	
+		}
+	}else if (cfg->type == T_SOCKET){
+	
+	}else if (cfg->type == T_STD){
+		readfd=0;
+	}
+
+	char * readbuf;
+	readbuf = malloc(sizeof(char)*READ_BUFFER_BLOCK_SIZE);
+	ssize_t nread;
+	while (1){
+		nread = read(readfd,(void *) readbuf, READ_BUFFER_BLOCK_SIZE);
+		if (nread == 0){ // EOF
+			close(readfd);
+			free(readbuf);
+			return 0;
+		}else if (nread == -1){ //Error
+			warn("Error while reading from %s",cfg->name);
+			close(readfd);
+			free(readbuf);
+			return -1;
+		}
+		write(1,readbuf,nread);
+	}
+	// Should be unreachable
+	return -2;
+} 
+
+void * write_endpt(void * args){
+	printf("Thread %p started\n",args);
+	struct endpt_cfg * cfg;
+	cfg = (struct endpt_cfg *)args;
+	int writefd;
+	if (cfg->type == T_FILE){
+		writefd = open(cfg->name, O_WRONLY | O_CREAT | O_TRUNC,
+			S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+		if (writefd == -1){
+			warn("Opening file %s to write failed\n");
+			return NULL;
+		}
+	
+	} else if (cfg->type == T_SOCKET){
+	
+	} else if (cfg->type == T_STD){
+		writefd = 1;	
+	}
+
+	char * writebuf;
+	while (1) {
+		writebuf = buffer_get_data_pointer(cfg->buffer);
+		int nwritten;
+		nwritten = write(writefd,(void *) writebuf,cfg->buffer->it_size);
+		if (nwritten != cfg->buffer->it_size){
+		
+		}
+	}
+
+	return NULL;
+}
+
+struct buffer * create_buffers(int nbuffers){
+	struct buffer * buffers;
+	buffers = malloc(sizeof(struct buffer)*nbuffers);
+	if (buffers == NULL){
+		printf("Can't allocate memory for buffers\n");
+		return NULL;
+	}
+	for (int i=0; i<nbuffers;i++){
+		char * buffer;
+		buffer = malloc(sizeof(char)*WRITE_BUFFER_BLOCK_SIZE*WRITE_BUFFER_BLOCK_COUNT);
+		if (buffer == NULL){
+			printf("Can't allocate memory for buffers\n");
+			while (i>=0)
+				free(buffers[i].buffer);
+			return NULL;
+		}
+		buffers[i].buffer = buffer;
+		buffers[i].nitems = WRITE_BUFFER_BLOCK_COUNT;
+		buffers[i].it_size = WRITE_BUFFER_BLOCK_SIZE;
+		buffers[i].prod_pos = 0;
+		buffers[i].cons_pos = buffers[i].nitems-1;
+		if (pthread_mutex_init(&buffers[i].lock,NULL)){
+			printf("Error in mutex initialization\n");
+			return NULL;
+		}
+		if (pthread_cond_init(&buffers[i].empty_cv,NULL)){
+			printf("Error in conditional variable initialization\n");
+			return NULL;
+		}
+	}	
+
+	return buffers;
+}
+
+
 int main(int argc, char ** argv){
 	if (parse_args(argc,argv,&args)==-1){
 		usage(argv[0]);
@@ -309,6 +472,36 @@ int main(int argc, char ** argv){
 	print_args(&args);
 	parse_config_file(&config,args.cfg_file);
 	print_config(&config);
+	if (! check_config(&config)){
+		printf("Config check failed\n");
+		return 1;
+	}
+	struct buffer * buffers;
+	buffers = create_buffers(config.n_endpts);
+	if (buffers == NULL)
+	{
+		printf("Error while initializing buffers\n");
+		return 1;
+	}
+	for (int i=0;i<config.n_endpts;i++){
+		config.endpts[i].buf = &buffers[i];	
+	}
+	pthread_t * threads;
+	threads = malloc(sizeof(pthread_t)*config.n_endpts);
+	if (threads == NULL){
+		printf("Failed to allocate space for threads\n");
+		return 1;
+	}
+	for (int i=0; i<config.n_endpts;i++){
+		int res;
+		res = pthread_create(&threads[i],NULL,write_endpt,(void *)(&config.endpts[i]));
+		if (res){
+			printf("Failed to start thread\n");
+			}
+			return 1;
+		}
+	}
+	read_endpt(get_read_endpt(&config));
 
 	return 0;
 }

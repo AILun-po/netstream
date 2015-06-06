@@ -1,6 +1,7 @@
 #ifndef NETSTREAM_H
 #define NETSTREAM_H
 
+#include <pthread.h>
 #include <netinet/in.h>
 
 struct cmd_args {
@@ -22,6 +23,19 @@ struct endpt_cfg {
 	int port;
 	int protocol;
 	int keepalive;
+	struct buffer * buf;
+
+};
+
+struct buffer {
+	size_t nitems;
+	size_t it_size; 
+	char * buffer;
+	int prod_pos;
+	int cons_pos;
+	pthread_mutex_t lock;
+	pthread_cond_t empty_cv;
+
 };
 
 struct io_cfg {
