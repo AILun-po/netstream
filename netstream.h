@@ -39,8 +39,9 @@ struct buffer {
 };
 
 struct io_cfg {
-	int n_endpts;
-	struct endpt_cfg * endpts;
+	int n_outs;
+	struct endpt_cfg * outs;
+	struct endpt_cfg * input;
 };
 
 #endif
