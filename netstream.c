@@ -7,6 +7,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
 #include <yaml.h>
 #include <netinet/in.h>
@@ -80,7 +82,7 @@ void endpt_config_init(struct endpt_cfg * config){
 	config->type = T_INVAL;
 	config->retry = NO;
 	config->name = NULL;
-	config->port = -1;
+	config->port = NULL;
 	config->protocol = -1;
 	config->keepalive = 0; 
 }
@@ -141,11 +143,10 @@ int endpt_config_set_item(struct endpt_cfg * config, char * key, char * value){
 		config->name = name;
 	// Port
 	}else if(strcmp(key,"Port")==0){
-		int port = strtol(value,NULL,10);
-		if (port > 65535 || port <= 0){
-			printf("Port number %d out of range\n",port);
-			return -1;
-		}
+		size_t len = strlen(value);
+		char * port;
+		port = malloc(sizeof(char)*len);
+		strcpy(port,value);
 		config->port = port;
 	// Protocol
 	}else if(strcmp(key,"Protocol")==0){
@@ -356,7 +357,7 @@ void print_config(struct io_cfg * cfg){
 				break;
 		}
 		printf("	Name: %s\n",cfg->outs[i].name);
-		printf("	Port: %d\n",cfg->outs[i].port);
+		printf("	Port: %s\n",cfg->outs[i].port);
 		printf("	Protocol: ");
 		switch (cfg->outs[i].protocol){
 			case IPPROTO_TCP:
@@ -415,7 +416,7 @@ void print_config(struct io_cfg * cfg){
 			break;
 	}
 	printf("	Name: %s\n",cfg->input->name);
-	printf("	Port: %d\n",cfg->input->port);
+	printf("	Port: %s\n",cfg->input->port);
 	printf("	Protocol: ");
 	switch (cfg->input->protocol){
 		case IPPROTO_TCP:
@@ -499,6 +500,36 @@ void * write_endpt(void * args){
 		}
 	
 	} else if (cfg->type == T_SOCKET){
+		struct addrinfo hints;
+		memset(&hints,0,sizeof(struct addrinfo));
+		hints.ai_family = AF_UNSPEC;
+		if (cfg->protocol == IPPROTO_TCP)
+			hints.ai_socktype = SOCK_STREAM;
+		else if (cfg->protocol == IPPROTO_UDP)
+			hints.ai_socktype = SOCK_DGRAM;
+		hints.ai_flags = 0;
+		hints.ai_protocol = 0;
+
+		int res;
+		struct addrinfo * addrinfo;
+		res = getaddrinfo(cfg->name,cfg->port,&hints,&addrinfo);
+		if (res){
+			printf("Error when resolving %s: %s\n",cfg->name,gai_strerror(res));
+			return NULL;
+		}
+		for (struct addrinfo * aiptr = addrinfo; aiptr!=NULL; aiptr=aiptr->ai_next){
+			writefd = socket(aiptr->ai_family,aiptr->ai_socktype,aiptr->ai_protocol);
+			if (writefd == -1)
+				continue;
+			if (connect(writefd,aiptr->ai_addr,aiptr->ai_addrlen) != -1)
+				break;
+			close(writefd);
+			writefd = -1;
+		}
+		if (writefd == -1){
+			printf("Could not connect to %s\n",cfg->name);
+			return NULL;
+		}
 	
 	} else if (cfg->type == T_STD){
 		writefd = 1;	

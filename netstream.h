@@ -20,7 +20,7 @@ struct endpt_cfg {
 	enum endpt_type type;
 	enum endpt_retry retry;
 	char * name;
-	int port;
+	char * port;
 	int protocol;
 	int keepalive;
 	struct buffer * buf;
