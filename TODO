@@ -1,0 +1,3 @@
+- dopsat check_config
+- kontrola poctu vystupu (viz specifikace)
+- warn a err funkce vzhledem k ukecanosti 
