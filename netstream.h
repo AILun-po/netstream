@@ -59,6 +59,7 @@ struct io_cfg {
 #define READ_BUFFER_BLOCK_SIZE 32
 #define WRITE_BUFFER_BLOCK_SIZE 32
 #define WRITE_BUFFER_BLOCK_COUNT 8
+#define MAX_OUTPUTS 100
 #define RETRY_DELAY 1
 
 int dprint(enum verbosity verb,const char * format, ...);

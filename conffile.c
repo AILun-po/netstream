@@ -311,7 +311,52 @@ void print_config(struct io_cfg * cfg){
 	printf("	Keepalive: %d\n",cfg->input->keepalive);
 	printf("\n");		
 }
+static int  check_endpt(struct endpt_cfg * cfg,char num){
+	if (cfg->dir == DIR_INVAL){
+		dprint(ERR,"Endpoint %d dir not defined\n",num);
+		return 0;
+	}
+	switch(cfg->type){
+		case T_INVAL:
+			dprint(ERR,"Endpoint %d type not defined\n",num);
+			return 0;
+		case T_FILE:
+			if (cfg->name == NULL){
+				dprint(ERR,"Endpoint %d name not defined\n",num);
+				return 0;
+			}
+		case T_SOCKET:
+			if (cfg->name == NULL){
+				dprint(ERR,"Endpoint %d name not defined\n",num);
+				return 0;
+			}
+			if (cfg->port == NULL){
+				dprint(ERR,"Endpoint %d port not defined\n",num);
+				return 0;
+			}
+			if (cfg->protocol == -1){
+				dprint(ERR,"Endpoint %d protocol not defined\n",num);
+				return 0;
+			}
+			if (cfg->keepalive == -1){
+				dprint(ERR,"Endpoint %d keepalive not defined\n",num);
+				return 0;
+			}
+	}
+	return 1;
+
+} 
 int check_config(struct io_cfg * config){
-	// TODO: napsat
+	if (config->n_outs > MAX_OUTPUTS){
+		dprint(ERR,"Defined more outputs than MAX_OUTPUTS\n");
+		return 0;
+	} 	
+	if (!check_endpt(config->input))
+		return 0;
+	for (int i=0;i<config->n_outs;i++){
+		if (!check_endpt(&config->outputs[i])){
+			return 0;
+		}
+	}
 	return 1;
 }
