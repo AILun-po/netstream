@@ -15,6 +15,7 @@
 #include "buffer.h"
 #include "endpts.h"
 
+/* Endpoint for input. Gets pointer to I/O config in args */
 void * read_endpt(void * args){
 	struct io_cfg * cfg;
 	cfg = (struct io_cfg *) args;
@@ -144,6 +145,7 @@ read_repeat:
 	return NULL;
 } 
 
+/* Output endpoint. Gets pointer to endpoint config in args*/
 void * write_endpt(void * args){
 	do {
 	dprint(INFO,"Thread %p: Start writing\n",args);

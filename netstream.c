@@ -13,6 +13,11 @@
 struct cmd_args args;
 struct io_cfg config;
 
+/* Debug print. If program verbosity is greater or equal to verb, printf-like format string is
+ * printed to stderr.
+ *
+ * Returns result of vfprintf or 0 if verbosity is too small
+ */
 int dprint(enum verbosity verb,const char * format, ...){
 	if (args.verbosity >= verb){
 		va_list args;
@@ -22,10 +27,12 @@ int dprint(enum verbosity verb,const char * format, ...){
 	return 0;
 }
 
+/* Prints short usage */
 void usage(char * name){
-	printf("Usage: %s [-c <config_file>] [-d] [-v [level]] [-t]\n",name);
+i	printf("Usage: %s [-c <config_file>] [-d] [-v [level]] [-t]\n",name);
 }
 
+/* Prints long usage help */
 void help(void){
 	printf("Available options:\n");
 	printf("	-c <file>	- use <file> as a config (default netstream.conf)\n");
@@ -34,6 +41,10 @@ void help(void){
 	printf("	-t		- only load config and test neigbours reachability\n");
 }
 
+/* Parse command line arguments into structure cfg.
+ *
+ * Returns 0 on success, -1 if unrecognized switch is found
+ */
 int parse_args(int argc, char ** argv, struct cmd_args * cfg){
 	char * optstring="c:dv::t";
 	int opt;
@@ -72,7 +83,7 @@ int parse_args(int argc, char ** argv, struct cmd_args * cfg){
 		
 }
 
-
+/* Print command line arguments from structure cfg to stderr. */
 void print_args(struct cmd_args * cfg){
 	fprintf(stderr,"Command line arguments:\n");
 	fprintf(stderr,"	config file: %s\n",cfg->cfg_file);
