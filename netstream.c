@@ -124,6 +124,9 @@ int main(int argc, char ** argv){
 			return 1;
 		}
 	}
+	pthread_t read_thr;
+	int res;
+	res = pthread_create(&read_thr,NULL,read_endpt,(void *)(&config));
 	read_endpt(&config);
 	
 	// Not useful now, need to rewrite main

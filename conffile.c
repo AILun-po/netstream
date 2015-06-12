@@ -4,6 +4,7 @@
 #include "netstream.h"
 #include "conffile.h"
 
+/* Initialize endpoint config structure */
 void endpt_config_init(struct endpt_cfg * config){
 	config->dir = DIR_INVAL;
 	config->type = T_INVAL;
@@ -12,11 +13,15 @@ void endpt_config_init(struct endpt_cfg * config){
 	config->port = NULL;
 	config->protocol = -1;
 	config->keepalive = 0; 
+	config->exit_status = -255;
 }
 
+/* Initialize I/O config structure with nouts outputs
+ *
+ * Returns 0 on success, -1 if allocation fails. */
 int io_config_init(struct io_cfg * config,int nitems){
-	config->n_outs = nitems;
-	config->outs = malloc(sizeof(struct endpt_cfg)*nitems);
+	config->n_outs = nouts;
+	config->outs = malloc(sizeof(struct endpt_cfg)*nouts);
 	config->input = malloc(sizeof(struct endpt_cfg));
 	if (config->outs == NULL || (config->input == NULL)){
 		dprint(WARN,"Failed to allocate memory in %s\n",__FUNCTION__);
@@ -26,6 +31,10 @@ int io_config_init(struct io_cfg * config,int nitems){
 	return 0;
 } 
 
+/* Set item with name key to value value in endpoint config config.
+ *
+ * Returns 0 on success, -1 if value is invalid for given key.
+ */
 int endpt_config_set_item(struct endpt_cfg * config, char * key, char * value){
 	// Direction
 	if (strcmp(key,"Direction")==0){	
@@ -101,6 +110,9 @@ int endpt_config_set_item(struct endpt_cfg * config, char * key, char * value){
 	return 0;
 }
 
+/* Find the input in config. In config file input is not needed to be first, this function
+ * returns pointer to first input defined in config file or NULL if none is defined.
+ */
 static struct endpt_cfg * get_read_endpt(struct io_cfg * cfg){
 	for (int i=0;i<cfg->n_outs;i++){
 		if (cfg->outs[i].dir == DIR_INPUT)
@@ -110,6 +122,10 @@ static struct endpt_cfg * get_read_endpt(struct io_cfg * cfg){
 	
 }
 
+/* Parse config file from given filename into given config structure
+ *
+ * Returns 0 on success, -1 on error.
+ */
 // TODO dealokace pri nepovedenem cteni konfigurace
 int parse_config_file(struct io_cfg * config,char * filename){
 	yaml_parser_t parser;
@@ -192,6 +208,7 @@ int parse_config_file(struct io_cfg * config,char * filename){
 	return 0;
 }
 
+/* Printf I/O config cfg to stdout*/
 void print_config(struct io_cfg * cfg){
 	printf("Config:\n");
 	for (int i=0;i<cfg->n_outs;i++){
@@ -311,6 +328,12 @@ void print_config(struct io_cfg * cfg){
 	printf("	Keepalive: %d\n",cfg->input->keepalive);
 	printf("\n");		
 }
+
+/* Check endpoint configuration. Parameter num is order of the endpoint and it
+ * is used only for error prints.
+ *
+ * Returns 1 on success, 0 if there is an error in configuration.
+ */
 static int  check_endpt(struct endpt_cfg * cfg,char num){
 	if (cfg->dir == DIR_INVAL){
 		dprint(ERR,"Endpoint %d dir not defined\n",num);
@@ -325,6 +348,7 @@ static int  check_endpt(struct endpt_cfg * cfg,char num){
 				dprint(ERR,"Endpoint %d name not defined\n",num);
 				return 0;
 			}
+			break;
 		case T_SOCKET:
 			if (cfg->name == NULL){
 				dprint(ERR,"Endpoint %d name not defined\n",num);
@@ -346,15 +370,24 @@ static int  check_endpt(struct endpt_cfg * cfg,char num){
 	return 1;
 
 } 
+
+/* Check I/O config.
+ *
+ * Returns 1 on success, 0 if there is an error in configuration
+ */
 int check_config(struct io_cfg * config){
 	if (config->n_outs > MAX_OUTPUTS){
 		dprint(ERR,"Defined more outputs than MAX_OUTPUTS\n");
 		return 0;
 	} 	
-	if (!check_endpt(config->input))
+	if (!check_endpt(config->input,0))
 		return 0;
 	for (int i=0;i<config->n_outs;i++){
-		if (!check_endpt(&config->outputs[i])){
+		if (config->outs[i].dir != DIR_OUTPUT){
+			dprint(ERR,"More inputs defined\n");
+			return 0;
+		}
+		if (!check_endpt(&config->outs[i],i+1)){
 			return 0;
 		}
 	}

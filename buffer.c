@@ -2,10 +2,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-
 #include "netstream.h"
 #include "buffer.h"
 
+/* Insert into buffer buf ndata bytes from address data. If ndata == -1, 
+ * nothing is copied and datalens is set to -1 at producers position. This
+ * is used for indicating end of stream.
+ *
+ * Returns -1 if buffer is full (and nothing is inserted), 0 otherwise.
+ */
 int buffer_insert(struct buffer * buf,char * data,ssize_t ndata){
 	pthread_mutex_lock(&buf->lock);
 	// Buffer is full, discard data 
@@ -31,6 +36,7 @@ int buffer_insert(struct buffer * buf,char * data,ssize_t ndata){
 	return 0;
 }
 
+/* Returns pointer to consumer position in buffer */ 
 char * buffer_cons_data_pointer(struct buffer * buf){
 	pthread_mutex_lock(&buf->lock);
 	char * result;
@@ -40,6 +46,11 @@ char * buffer_cons_data_pointer(struct buffer * buf){
 
 }
 
+/* Move consumer position to next item and if buffer is empty, block until
+ * a new item is written into buffer.
+ *
+ * Returns size of the next data item on consumer position.
+ */
 int buffer_after_delete(struct buffer * buf){
 	pthread_mutex_lock(&buf->lock);
 	// Buffer is empty, wait until is filled
@@ -53,6 +64,10 @@ int buffer_after_delete(struct buffer * buf){
 	return ncons_data;
 }
 
+/* Create and initialize array of buffers. 
+ *
+ * Returns array od nbuffers buffers or NULL if allocation fails.
+ */
 struct buffer * create_buffers(int nbuffers){
 	struct buffer * buffers;
 	buffers = malloc(sizeof(struct buffer)*nbuffers);
@@ -64,7 +79,7 @@ struct buffer * create_buffers(int nbuffers){
 		char * buffer;
 		ssize_t * datalens;
 		buffer = malloc(sizeof(char)*WRITE_BUFFER_BLOCK_SIZE*WRITE_BUFFER_BLOCK_COUNT);
-		datalens = malloc(sizeof(ssize_t)*WRITE_BUFFER_BLOCK_COUNT);
+		datalens = calloc(sizeof(ssize_t),WRITE_BUFFER_BLOCK_COUNT);
 		if (buffer == NULL || datalens == NULL){
 			dprint(WARN,"Can't allocate memory for buffers\n");
 			free(buffer);
@@ -82,7 +97,6 @@ struct buffer * create_buffers(int nbuffers){
 		buffers[i].it_size = WRITE_BUFFER_BLOCK_SIZE;
 		buffers[i].prod_pos = 0;
 		buffers[i].cons_pos = buffers[i].nitems-1;
-		buffers[i].nlast_data = -1;
 		if (pthread_mutex_init(&buffers[i].lock,NULL)){
 			dprint(WARN,"Error in mutex initialization\n");
 			return NULL;
@@ -96,6 +110,7 @@ struct buffer * create_buffers(int nbuffers){
 	return buffers;
 }
 
+/* Free array of nbuffers buffers */
 void free_buffers(struct buffer * buffers, int nbuffers){
 	for (int i=0; i<nbuffers; i++){
 		pthread_mutex_destroy(&buffers[i].lock);

@@ -15,7 +15,9 @@
 #include "buffer.h"
 #include "endpts.h"
 
-int read_endpt(struct io_cfg * cfg){
+void * read_endpt(void * args){
+	struct io_cfg * cfg;
+	cfg = (struct io_cfg *) args;
 	int listenfd;
 	listenfd = -1;
 	do {
@@ -132,13 +134,14 @@ read_repeat:
 			for (int i=0;i<cfg->n_outs;i++){
 				buffer_insert(cfg->outs[i].buf,NULL,-1);
 			}
-			return -2;
+			cfg->input->exit_status=0;
+			return NULL;
 	
 	}
 	sleep(RETRY_DELAY);
 	} while (1);
 	// Should be unreachable
-	return -2;
+	return NULL;
 } 
 
 void * write_endpt(void * args){
