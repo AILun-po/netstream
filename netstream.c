@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include <signal.h>
+#include <fcntl.h>
 
 #include "netstream.h"
 #include "buffer.h"
@@ -12,6 +13,7 @@
 
 struct cmd_args args;
 struct io_cfg config;
+int * signal_fds;
 
 /* Debug print. If program verbosity is greater or equal to verb, printf-like format string is
  * printed to stderr.
@@ -29,7 +31,7 @@ int dprint(enum verbosity verb,const char * format, ...){
 
 /* Prints short usage */
 void usage(char * name){
-i	printf("Usage: %s [-c <config_file>] [-d] [-v [level]] [-t]\n",name);
+	printf("Usage: %s [-c <config_file>] [-d] [-v [level]] [-t]\n",name);
 }
 
 /* Prints long usage help */
@@ -39,6 +41,20 @@ void help(void){
 	printf("	-d		- run as a daemon\n");
 	printf("	-v [level]	- set verbosity (0 quiet, 7 maximum)\n");
 	printf("	-t		- only load config and test neigbours reachability\n");
+}
+
+/* Handle a signal and add it to the signal queue
+ * 
+ * Catches a signal and write its number to the signal pipe
+ */
+
+void handle_signal(int signum){
+	int8_t bytesig;
+	bytesig = signum;
+	write(signal_fds[1],&bytesig,1);
+	signum += 65;
+	write(1,"Signal:",8);
+	write(1,&signum,sizeof(int));
 }
 
 /* Parse command line arguments into structure cfg.
@@ -94,7 +110,6 @@ void print_args(struct cmd_args * cfg){
 
 
 int main(int argc, char ** argv){
-	signal(SIGPIPE,SIG_IGN);
 	if (parse_args(argc,argv,&args)==-1){
 		usage(argv[0]);
 		return 1;
@@ -111,6 +126,34 @@ int main(int argc, char ** argv){
 		dprint(CRIT,"Config check failed\n");
 		return 1;
 	}
+
+	// Listen to signals
+	signal_fds = malloc(sizeof(int)*2);
+	if (pipe(signal_fds)!=0){
+		dprint(CRIT,"Error when creating signal pipe\n");
+		return 1;
+	}
+	if (fcntl(signal_fds[0],F_SETFL,O_NONBLOCK)!=0){
+		dprint(CRIT,"Error when creating signal pipe\n");
+		return 1;
+	}
+	if (fcntl(signal_fds[1],F_SETFL,O_NONBLOCK)!=0){
+		dprint(CRIT,"Error when creating signal pipe\n");
+		return 1;
+	}
+	printf("%d\n",signal_fds[0]);
+	//TODO error handling
+	struct sigaction act;
+	memset(&act,0,sizeof(struct sigaction));
+	sigfillset(&(act.sa_mask));
+	act.sa_handler = *(handle_signal);
+	sigaction(SIGINT,&act,NULL);
+	sigaction(SIGPIPE,&act,NULL);
+//	sigaction(SIGTERM,&act,NULL);
+
+
+
+
 	struct buffer * buffers;
 	buffers = create_buffers(config.n_outs);
 	if (buffers == NULL)
@@ -138,7 +181,7 @@ int main(int argc, char ** argv){
 	pthread_t read_thr;
 	int res;
 	res = pthread_create(&read_thr,NULL,read_endpt,(void *)(&config));
-	read_endpt(&config);
+//	read_endpt(&config);
 	
 	// Not useful now, need to rewrite main
 	/*

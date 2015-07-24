@@ -5,5 +5,6 @@
 
 void * read_endpt(void * args);
 void * write_endpt(void * args);
+extern int * signal_fds; 
 
 #endif

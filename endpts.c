@@ -10,6 +10,8 @@
 #include <netinet/in.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
+#include <signal.h>
 
 #include "netstream.h"
 #include "buffer.h"
@@ -17,6 +19,13 @@
 
 /* Endpoint for input. Gets pointer to I/O config in args */
 void * read_endpt(void * args){
+	// Mask signals
+	// TODO report error codes
+	sigset_t sigset;
+	sigfillset(&sigset);
+	pthread_sigmask(SIG_BLOCK,&sigset,NULL);
+
+
 	struct io_cfg * cfg;
 	cfg = (struct io_cfg *) args;
 	int listenfd;
@@ -95,6 +104,7 @@ void * read_endpt(void * args){
 	char * readbuf;
 	readbuf = malloc(sizeof(char)*READ_BUFFER_BLOCK_SIZE);
 	while (1){
+		printf("Rereading\n");
 		size_t toread;
 		size_t nread;
 		toread = READ_BUFFER_BLOCK_SIZE;
@@ -122,6 +132,21 @@ void * read_endpt(void * args){
 		for (int i=0;i<cfg->n_outs;i++){
 			buffer_insert(cfg->outs[i].buf,readbuf,toread);
 		}
+		// Handle signals
+		int8_t signum;
+		int ret;
+		errno = 0;
+		printf("%p\n",signal_fds);
+		ret = read(signal_fds[0],&signum,1);
+		if (ret==-1){
+			if (errno==EAGAIN){
+				// No signal arrived
+				printf("No signal received\n");
+			}
+		} else if (ret==1){
+			printf("Arrived signal %d\n",signum);
+		}
+		printf("Signal checked\n");
 	}
 read_repeat:
 	switch(read_cfg->retry){
@@ -139,6 +164,19 @@ read_repeat:
 			return NULL;
 	
 	}
+	// Handle signals
+	int8_t signum;
+	int ret;
+	errno = 0;
+	ret = read(signal_fds[0],&signum,1);
+	if (ret==-1){
+		if (errno==EAGAIN){
+			// No signal arrived
+			printf("No signal received\n");
+		}
+	} else if (ret==1){
+		printf("Arrived signal %d\n",signum);
+	}
 	sleep(RETRY_DELAY);
 	} while (1);
 	// Should be unreachable
@@ -147,6 +185,11 @@ read_repeat:
 
 /* Output endpoint. Gets pointer to endpoint config in args*/
 void * write_endpt(void * args){
+	// Mask signals
+	// TODO report error codes
+	sigset_t sigset;
+	sigfillset(&sigset);
+	pthread_sigmask(SIG_BLOCK,&sigset,NULL);
 	do {
 	dprint(INFO,"Thread %p: Start writing\n",args);
 	struct endpt_cfg * cfg;
