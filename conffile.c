@@ -20,8 +20,8 @@ void endpt_config_init(struct endpt_cfg * config){
  *
  * Returns 0 on success, -1 if allocation fails. */
 int io_config_init(struct io_cfg * config,int nitems){
-	config->n_outs = nouts;
-	config->outs = malloc(sizeof(struct endpt_cfg)*nouts);
+	config->n_outs = nitems;
+	config->outs = malloc(sizeof(struct endpt_cfg)*nitems);
 	config->input = malloc(sizeof(struct endpt_cfg));
 	if (config->outs == NULL || (config->input == NULL)){
 		dprint(WARN,"Failed to allocate memory in %s\n",__FUNCTION__);
@@ -72,14 +72,14 @@ int endpt_config_set_item(struct endpt_cfg * config, char * key, char * value){
 		}
 	// Name
 	}else if(strcmp(key,"Name")==0){
-		size_t len = strlen(value);
+		size_t len = strlen(value)+1;
 		char * name;
 		name = malloc(sizeof(char)*len);
 		strcpy(name,value);
 		config->name = name;
 	// Port
 	}else if(strcmp(key,"Port")==0){
-		size_t len = strlen(value);
+		size_t len = strlen(value)+1;
 		char * port;
 		port = malloc(sizeof(char)*len);
 		strcpy(port,value);
@@ -88,7 +88,7 @@ int endpt_config_set_item(struct endpt_cfg * config, char * key, char * value){
 	}else if(strcmp(key,"Protocol")==0){
 		if(strcmp(value,"TCP")==0){
 			config->protocol = IPPROTO_TCP;
-		}else if(strcmp(key,"UDP")==0){
+		}else if(strcmp(value,"UDP")==0){
 			config->protocol = IPPROTO_UDP;
 		}else {
 			dprint(WARN,"Invalid value \"%s\" for key \"%s\"\n",value,key);
