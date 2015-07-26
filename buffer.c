@@ -25,7 +25,7 @@ int buffer_insert(struct buffer * buf,char * data,ssize_t ndata){
 		buf->datalens[buf->prod_pos] = ndata;
 			
 	} else {
-		buf->datalens[buf->prod_pos] = -1; 
+		buf->datalens[buf->prod_pos] = ndata; 
 	}
 	// Buffer was empty, signal a condition variable
 	if ((buf->cons_pos+1)%buf->nitems == buf->prod_pos){
@@ -41,7 +41,7 @@ char * buffer_cons_data_pointer(struct buffer * buf){
 	pthread_mutex_lock(&buf->lock);
 	char * result;
 	result = buf->buffer+buf->cons_pos*buf->it_size;
-	pthread_mutex_unlock(&buf->lock);	
+	pthread_mutex_unlock(&buf->lock);
 	return result;
 
 }

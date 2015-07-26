@@ -23,7 +23,7 @@ struct cmd_args {
 
 enum endpt_dir {DIR_INPUT,DIR_OUTPUT, DIR_INVAL};	// Endpoint direction
 enum endpt_type {T_SOCKET, T_FILE, T_STD, T_INVAL};	// Endpoint type
-enum endpt_retry {NO=0,YES=1,IGNORE};			// Retry if read/write failed?
+enum endpt_retry {NO=0,YES=1,IGNORE,KILL};			// Retry if read/write failed?
 
 
 // Configuration of endpoint

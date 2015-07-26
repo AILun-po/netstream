@@ -4,6 +4,8 @@
 #include <stdarg.h>
 #include <signal.h>
 #include <fcntl.h>
+#include <unistd.h>
+#include <string.h>
 
 #include "netstream.h"
 #include "buffer.h"
