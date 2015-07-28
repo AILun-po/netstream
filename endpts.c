@@ -18,6 +18,35 @@
 #include "buffer.h"
 #include "endpts.h"
 
+char poll_errs(struct pollfd * pollfds){
+	char fail = 0; 
+	if (pollfds[0].revents & POLLERR){
+		fail = 1;
+		dprint(WARN,"POLLERR for read fd\n");
+	}
+	if (pollfds[0].revents & POLLHUP){
+		fail = 1;
+		dprint(WARN,"POLLHUP for read fd\n");
+	}
+	if (pollfds[0].revents & POLLNVAL){
+		fail = 1;
+		dprint(WARN,"POLLNVAL for read fd\n");
+	}
+	if (pollfds[1].revents & POLLERR){
+		fail = 1;
+		dprint(WARN,"POLLERR for signal fd\n");
+	}
+	if (pollfds[1].revents & POLLHUP){
+		fail = 1;
+		dprint(WARN,"POLLHUP for signal fd\n");
+	}
+	if (pollfds[1].revents & POLLNVAL){
+		fail = 1;
+		dprint(WARN,"POLLNVAL for signal fd\n");
+	}
+	return fail;
+}
+
 
 /* Endpoint for input. Gets pointer to I/O config in args */
 void * read_endpt(void * args){
@@ -32,6 +61,9 @@ void * read_endpt(void * args){
 	cfg = (struct io_cfg *) args;
 	int listenfd;
 	listenfd = -1;
+	struct pollfd pollfds[2];
+	pollfds[1].fd = signal_fds[0];
+	pollfds[1].events = POLLIN;
 	do {
 	dprint(INFO,"Start reading\n");
 	int readfd;
@@ -44,6 +76,10 @@ void * read_endpt(void * args){
 			warn("Error while opening %s for reading",read_cfg->name);	
 			read_cfg->exit_status = -1;
 			goto read_repeat;
+		} else if (read_cfg->test_only){
+			close(readfd);
+			read_cfg->exit_status = 0;
+			return NULL;
 		}
 	}else if (read_cfg->type == T_SOCKET && read_cfg->protocol == IPPROTO_TCP){
 		dprint(DEBUG,"Socket\n");
@@ -86,7 +122,49 @@ void * read_endpt(void * args){
 				goto read_repeat;
 			}
 		}
+		
+		if (read_cfg->test_only){
+			close(listenfd);
+			read_cfg->exit_status = 0;
+			return NULL;
+		}
+
 		dprint(DEBUG,"Accepting\n");
+		do {
+			pollfds[0].fd = listenfd;
+			pollfds[0].events = POLLIN;
+			if(poll(pollfds,2,-1)==-1){
+				warn("Error when polling on read");
+				close(listenfd);
+				listenfd = -1;
+				read_cfg->exit_status = -1;
+				goto read_repeat;
+			}
+			poll_errs(pollfds);
+			if (pollfds[1].revents & POLLIN){
+				dprint(INFO,"Signal received, interrupting accept\n");
+				// Handle signals
+				int8_t signum;
+				int ret;
+				errno = 0;
+				ret = read(signal_fds[0],&signum,1);
+				if (ret==-1){
+					warn("Error occured when reading from signal pipe");
+				}
+				switch (signum){
+					case SIGINT:
+						dprint(INFO,"Received SIGINT\n");
+						read_cfg->retry = KILL;
+						goto read_repeat;
+					default:
+						dprint(INFO,"Received signal %d\n, ignoring\n",signum);
+				}
+
+			}
+			if (!(pollfds[0].revents & POLLIN)){
+				continue;
+			}
+		} while (0); 
 		readfd = accept(listenfd,NULL,NULL);
 		if (readfd == -1){
 			warn("Could not accept on port %s:",read_cfg->port);
@@ -128,9 +206,21 @@ void * read_endpt(void * args){
 			goto read_repeat;
 		}
 		dprint(DEBUG,"Reading\n");
+
+		if (read_cfg->test_only){
+			close(readfd);
+			read_cfg->exit_status = 0;
+			return NULL;
+		}
+
 	}else if (read_cfg->type == T_STD){
 		dprint(DEBUG,"Stdin\n");
 		readfd=0;
+		if (read_cfg->test_only){
+			read_cfg->exit_status = 0;
+			return NULL;
+		}
+
 	}
 
 	char * readbuf;
@@ -143,11 +233,8 @@ void * read_endpt(void * args){
 		nread = 0;
 		while (nread < toread){
 			ssize_t res;
-			struct pollfd pollfds[2];
 			pollfds[0].fd = readfd;
 			pollfds[0].events = POLLIN;
-			pollfds[1].fd = signal_fds[0];
-			pollfds[1].events = POLLIN;
 			if(poll(pollfds,2,-1)==-1){
 				warn("Error when polling on read");
 				close(readfd);
@@ -155,32 +242,13 @@ void * read_endpt(void * args){
 				read_cfg->exit_status = -1;
 				goto read_repeat;
 			}
-			// TODO: Handle poll error stats
-			if (pollfds[0].revents & POLLERR){
-				dprint(WARN,"POLLERR for read fd\n");
-			}
-			if (pollfds[0].revents & POLLHUP){
-				dprint(WARN,"POLLHUP for read fd\n");
-			}
-			if (pollfds[0].revents & POLLNVAL){
-				dprint(WARN,"POLLNVAL for read fd\n");
-			}
-			if (pollfds[1].revents & POLLERR){
-				dprint(WARN,"POLLERR for signal fd\n");
-			}
-			if (pollfds[1].revents & POLLHUP){
-				dprint(WARN,"POLLHUP for signal fd\n");
-			}
-			if (pollfds[1].revents & POLLNVAL){
-				dprint(WARN,"POLLNVAL for signal fd\n");
-			}
+			poll_errs(pollfds);
 			if (pollfds[1].revents & POLLIN){
-				dprint(INFO,"Signal received, interrupting read");
+				dprint(INFO,"Signal received, interrupting read\n");
 				// Handle signals
 				int8_t signum;
 				int ret;
 				errno = 0;
-				dprint(DEBUG,"signal_fds[0]=%d\n",signal_fds[0]);
 				ret = read(signal_fds[0],&signum,1);
 				if (ret==-1){
 					warn("Error occured when reading from signal pipe");
@@ -234,6 +302,9 @@ void * read_endpt(void * args){
 		}
 	}
 read_repeat:
+	if (read_cfg->test_only){
+		return NULL;
+	}
 	switch(read_cfg->retry){
 		case YES:
 			dprint(INFO,"Retrying read\n");
@@ -286,6 +357,12 @@ void * write_endpt(void * args){
 			cfg->exit_status = -1;
 			goto write_repeat;
 		}
+		if (cfg->test_only){
+			close(writefd);
+			cfg->exit_status = 0;
+			return NULL;
+		}
+
 	
 	} else if (cfg->type == T_SOCKET){
 		struct addrinfo hints;
@@ -325,9 +402,18 @@ void * write_endpt(void * args){
 			cfg->exit_status = -1;
 			goto write_repeat;
 		}
+		if (cfg->test_only){
+			close(writefd);
+			cfg->exit_status = 0;
+			return NULL;
+		}
 	
 	} else if (cfg->type == T_STD){
 		writefd = 1;	
+		if (cfg->test_only){
+			cfg->exit_status = 0;
+			return NULL;
+		}
 	}
 
 	char * writebuf;

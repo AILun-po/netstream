@@ -37,6 +37,7 @@ struct endpt_cfg {
 	int keepalive;		// Keepalive interval in sec (0 - default)
 	struct buffer * buf;	// Write buffer (only for output)
 	int exit_status;	// Does the reading/writing thread ended normally?
+	char test_only;		// Only perform a test of connection, then end
 };
 
 // Write buffer for each output

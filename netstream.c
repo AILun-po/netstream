@@ -54,9 +54,6 @@ void handle_signal(int signum){
 	int8_t bytesig;
 	bytesig = signum;
 	write(signal_fds[1],&bytesig,1);
-	signum += 65;
-	write(1,"Signal:",8);
-	write(1,&signum,sizeof(int));
 }
 
 /* Parse command line arguments into structure cfg.
@@ -143,7 +140,7 @@ int main(int argc, char ** argv){
 		dprint(CRIT,"Error when creating signal pipe\n");
 		return 1;
 	}
-	printf("%d\n",signal_fds[0]);
+	
 	//TODO error handling
 	struct sigaction act;
 	memset(&act,0,sizeof(struct sigaction));
@@ -153,6 +150,10 @@ int main(int argc, char ** argv){
 	sigaction(SIGPIPE,&act,NULL);
 //	sigaction(SIGTERM,&act,NULL);
 
+	for (int i=0;i<config.n_outs;i++){
+		config.outs[i].test_only = !!args.testonly;
+	}
+	config.input->test_only = !!args.testonly;
 
 
 
@@ -166,6 +167,19 @@ int main(int argc, char ** argv){
 	for (int i=0;i<config.n_outs;i++){
 		config.outs[i].buf = &buffers[i];	
 	}
+
+	if (args.daemonize){
+		int res;
+		res = daemon(1,0);
+		if (res==-1){
+			err("Daemonization failed");
+		}
+	}
+
+	pthread_t read_thr;
+	int res;
+	res = pthread_create(&read_thr,NULL,read_endpt,(void *)(&config));
+	
 	pthread_t * threads;
 	threads = malloc(sizeof(pthread_t)*config.n_outs);
 	if (threads == NULL){
@@ -180,9 +194,6 @@ int main(int argc, char ** argv){
 			return 1;
 		}
 	}
-	pthread_t read_thr;
-	int res;
-	res = pthread_create(&read_thr,NULL,read_endpt,(void *)(&config));
 //	read_endpt(&config);
 	
 	// Not useful now, need to rewrite main
@@ -220,6 +231,7 @@ int main(int argc, char ** argv){
 			return 1;
 		}
 	}
+	//TODO: Use exit_status from threads 
 
 	return 0;
 }
