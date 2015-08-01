@@ -13,7 +13,7 @@
 #include "endpts.h"
 
 
-struct cmd_args args;
+struct cmd_args cmd_args;
 struct io_cfg config;
 int * signal_fds;
 
@@ -23,13 +23,29 @@ int * signal_fds;
  * Returns result of vfprintf or 0 if verbosity is too small
  */
 int dprint(enum verbosity verb,const char * format, ...){
-	if (args.verbosity >= verb){
+	if (cmd_args.verbosity >= verb){
 		va_list args;
 		va_start(args,format);
 		return vfprintf(stderr,format,args);
 	}
 	return 0;
 }
+
+/* Thread debug print. If program verbosity is greater or equal to verb,
+ * printf-like format string is printed to stderr. Thread id is printed first.
+ *
+ * Returns result of vfprintf or 0 if verbosity is too small
+ */
+int tdprint(void * id,enum verbosity verb,const char * format, ...){
+	if (cmd_args.verbosity >= verb){
+		fprintf(stderr,"[Thread %p] ",id);
+		va_list args;
+		va_start(args,format);
+		return vfprintf(stderr,format,args);
+	}
+	return 0;
+}
+
 
 /* Prints short usage */
 void usage(char * name){
@@ -109,17 +125,17 @@ void print_args(struct cmd_args * cfg){
 
 
 int main(int argc, char ** argv){
-	if (parse_args(argc,argv,&args)==-1){
+	if (parse_args(argc,argv,&cmd_args)==-1){
 		usage(argv[0]);
 		return 1;
 	}
-	if (args.verbosity >= DEBUG)
-		print_args(&args);
-	if (parse_config_file(&config,args.cfg_file)){
+	if (cmd_args.verbosity >= DEBUG)
+		print_args(&cmd_args);
+	if (parse_config_file(&config,cmd_args.cfg_file)){
 		dprint(CRIT,"Error while parsing config file\n");
 		return 1;
 	}
-	if (args.verbosity >= DEBUG)
+	if (cmd_args.verbosity >= DEBUG)
 		print_config(&config);
 	if (! check_config(&config)){
 		dprint(CRIT,"Config check failed\n");
@@ -151,9 +167,9 @@ int main(int argc, char ** argv){
 //	sigaction(SIGTERM,&act,NULL);
 
 	for (int i=0;i<config.n_outs;i++){
-		config.outs[i].test_only = !!args.testonly;
+		config.outs[i].test_only = !!cmd_args.testonly;
 	}
-	config.input->test_only = !!args.testonly;
+	config.input->test_only = !!cmd_args.testonly;
 
 
 
@@ -168,7 +184,7 @@ int main(int argc, char ** argv){
 		config.outs[i].buf = &buffers[i];	
 	}
 
-	if (args.daemonize){
+	if (cmd_args.daemonize){
 		int res;
 		res = daemon(1,0);
 		if (res==-1){
@@ -194,44 +210,32 @@ int main(int argc, char ** argv){
 			return 1;
 		}
 	}
-//	read_endpt(&config);
-	
-	// Not useful now, need to rewrite main
-	/*
-	for (int i=0;i<config.n_outs;i++){
-		if (pthread_kill(threads[i],0)){
-			void * retval;
-			pthread_join(threads[i],&retval);
-			if (config.outs[i].retry == YES){
-				res = pthread_create(&threads[i],NULL,write_endpt,
-						(void *)(&config.outs[i]));
-				if (res){
-					dprint(WARN,"Failed to restart thread\n");
-					return 1;
-				}
-			
-			} else if ((*((int *)retval) < 0 ) && 
-					config.outs[i].retry == NO){
-					dprint(WARN,"Thread failed, exitting\n");
-					//TODO: Exit all, then return.
-			}
-		
-		} 
+
+	int retval;
+	retval = 0;
+	res = pthread_join(read_thr,NULL);
+	if (res){
+		dprint(ERR,"Failed to join read thread:%s\n",strerror(res));
 	}
-	*/
-
-	//
-
+	if (config.input->exit_status != 0){
+		dprint(WARN,"There was error in read thread, cancelling writer threads\n");
+		retval = 1;
+		for (int i=0;i<config.n_outs;i++){
+			pthread_cancel(threads[i]);
+		}
+	}
 
 	for (int i=0;i<config.n_outs;i++){
-		int res;
 		res = pthread_join(threads[i],NULL);
 		if (res){
+			retval = 1;
 			dprint(ERR,"Failed to join thread\n");
-			return 1;
+		}
+		if (config.outs[i].exit_status!=0){
+			retval = 1;
 		}
 	}
 	//TODO: Use exit_status from threads 
 
-	return 0;
+	return retval;
 }

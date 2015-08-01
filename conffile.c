@@ -62,9 +62,9 @@ int endpt_config_set_item(struct endpt_cfg * config, char * key, char * value){
 	}else if(strcmp(key,"Retry")==0){
 		if(strcmp(value,"yes")==0){
 			config->retry = YES;
-		}else if(strcmp(key,"no")==0){
+		}else if(strcmp(value,"no")==0){
 			config->retry = NO;
-		}else if(strcmp(key,"ignore")==0){
+		}else if(strcmp(value,"ignore")==0){
 			config->retry = IGNORE;
 		}else {
 			dprint(WARN,"Invalid value \"%s\" for key \"%s\"\n",value,key);

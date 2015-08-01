@@ -68,5 +68,7 @@ struct io_cfg {
 
 // Like printf, but with verbosity level
 int dprint(enum verbosity verb,const char * format, ...);
+int tdprint(void * id,enum verbosity verb,const char * format, ...);
+extern struct cmd_args cmd_args;
 
 #endif

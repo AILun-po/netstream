@@ -13,36 +13,38 @@
 #include <errno.h>
 #include <signal.h>
 #include <poll.h>
+#include <stdarg.h>
+#include <stdio.h>
 
 #include "netstream.h"
 #include "buffer.h"
 #include "endpts.h"
 
-char poll_errs(struct pollfd * pollfds){
+char poll_errs(void * id,struct pollfd * pollfds){
 	char fail = 0; 
 	if (pollfds[0].revents & POLLERR){
 		fail = 1;
-		dprint(WARN,"POLLERR for read fd\n");
+		tdprint(id,WARN,"POLLERR for read fd\n");
 	}
 	if (pollfds[0].revents & POLLHUP){
 		fail = 1;
-		dprint(WARN,"POLLHUP for read fd\n");
+		tdprint(id,WARN,"POLLHUP for read fd\n");
 	}
 	if (pollfds[0].revents & POLLNVAL){
 		fail = 1;
-		dprint(WARN,"POLLNVAL for read fd\n");
+		tdprint(id,WARN,"POLLNVAL for read fd\n");
 	}
 	if (pollfds[1].revents & POLLERR){
 		fail = 1;
-		dprint(WARN,"POLLERR for signal fd\n");
+		tdprint(id,WARN,"POLLERR for signal fd\n");
 	}
 	if (pollfds[1].revents & POLLHUP){
 		fail = 1;
-		dprint(WARN,"POLLHUP for signal fd\n");
+		tdprint(id,WARN,"POLLHUP for signal fd\n");
 	}
 	if (pollfds[1].revents & POLLNVAL){
 		fail = 1;
-		dprint(WARN,"POLLNVAL for signal fd\n");
+		tdprint(id,WARN,"POLLNVAL for signal fd\n");
 	}
 	return fail;
 }
@@ -50,30 +52,40 @@ char poll_errs(struct pollfd * pollfds){
 
 /* Endpoint for input. Gets pointer to I/O config in args */
 void * read_endpt(void * args){
-	// Mask signals
-	// TODO report error codes
-	sigset_t sigset;
-	sigfillset(&sigset);
-	pthread_sigmask(SIG_BLOCK,&sigset,NULL);
-
-
 	struct io_cfg * cfg;
 	cfg = (struct io_cfg *) args;
+	struct endpt_cfg * read_cfg;
+	read_cfg = cfg->input;
+	read_cfg->exit_status=0;
+	
+	// Mask signals
+	sigset_t sigset;
+	if (sigfillset(&sigset)==-1)
+	{
+		tdprint((void *)read_cfg,WARN,"Error in signal setup\n");
+		read_cfg->exit_status = -1;
+		return NULL;
+	}
+	if(pthread_sigmask(SIG_BLOCK,&sigset,NULL)){
+		tdprint((void *)read_cfg,WARN,"Error in signal setup\n");
+		read_cfg->exit_status = -1;
+		return NULL;
+	}
+
+
 	int listenfd;
 	listenfd = -1;
 	struct pollfd pollfds[2];
 	pollfds[1].fd = signal_fds[0];
 	pollfds[1].events = POLLIN;
 	do {
-	dprint(INFO,"Start reading\n");
+	tdprint((void *)read_cfg,INFO,"Start reading\n");
 	int readfd;
-	struct endpt_cfg * read_cfg;
-	read_cfg = cfg->input;
 	if (read_cfg->type == T_FILE){
-		dprint(DEBUG,"File\n");
+		tdprint((void *)read_cfg,DEBUG,"File\n");
 		readfd = open(read_cfg->name,O_RDONLY);
 		if (readfd==-1){
-			warn("Error while opening %s for reading",read_cfg->name);	
+			warn("Error while opening %s for reading: ",read_cfg->name);	
 			read_cfg->exit_status = -1;
 			goto read_repeat;
 		} else if (read_cfg->test_only){
@@ -82,7 +94,7 @@ void * read_endpt(void * args){
 			return NULL;
 		}
 	}else if (read_cfg->type == T_SOCKET && read_cfg->protocol == IPPROTO_TCP){
-		dprint(DEBUG,"Socket\n");
+		tdprint((void *)read_cfg,DEBUG,"Socket\n");
 		if (listenfd==-1){
 			struct addrinfo hints;
 			memset(&hints,0,sizeof(struct addrinfo));
@@ -95,7 +107,7 @@ void * read_endpt(void * args){
 			struct addrinfo * addrinfo;
 			res = getaddrinfo(NULL,read_cfg->port,&hints,&addrinfo);
 			if (res){
-				dprint(ERR,"Error when resolving %s: %s\n",read_cfg->name,gai_strerror(res));
+				tdprint((void *)read_cfg,ERR,"Error when resolving %s: %s\n",read_cfg->name,gai_strerror(res));
 				read_cfg->exit_status = -1;
 				goto read_repeat;
 			}
@@ -103,7 +115,7 @@ void * read_endpt(void * args){
 				listenfd = socket(aiptr->ai_family,aiptr->ai_socktype,aiptr->ai_protocol);
 				if (listenfd == -1)
 					continue;
-				dprint(DEBUG,"Binding\n");
+				tdprint((void *)read_cfg,DEBUG,"Binding\n");
 				if (bind(listenfd,aiptr->ai_addr,aiptr->ai_addrlen) == 0)
 					break;
 				close(listenfd);
@@ -111,11 +123,11 @@ void * read_endpt(void * args){
 			}
 			freeaddrinfo(addrinfo);
 			if (listenfd == -1){
-				dprint(ERR,"Could not bind to port %s\n",read_cfg->port);
+				tdprint((void *)read_cfg,ERR,"Could not bind to port %s\n",read_cfg->port);
 				read_cfg->exit_status = -1;
 				goto read_repeat;
 			}
-			dprint(DEBUG,"Listening\n");
+			tdprint((void *)read_cfg,DEBUG,"Listening\n");
 			if (listen(listenfd,1)){
 				warn("Could not listen on port %s\n",read_cfg->port);
 				read_cfg->exit_status = -1;
@@ -129,7 +141,7 @@ void * read_endpt(void * args){
 			return NULL;
 		}
 
-		dprint(DEBUG,"Accepting\n");
+		tdprint((void *)read_cfg,DEBUG,"Accepting\n");
 		do {
 			pollfds[0].fd = listenfd;
 			pollfds[0].events = POLLIN;
@@ -140,9 +152,9 @@ void * read_endpt(void * args){
 				read_cfg->exit_status = -1;
 				goto read_repeat;
 			}
-			poll_errs(pollfds);
+			poll_errs((void *)read_cfg,pollfds);
 			if (pollfds[1].revents & POLLIN){
-				dprint(INFO,"Signal received, interrupting accept\n");
+				tdprint((void *)read_cfg,INFO,"Signal received, interrupting accept\n");
 				// Handle signals
 				int8_t signum;
 				int ret;
@@ -153,11 +165,11 @@ void * read_endpt(void * args){
 				}
 				switch (signum){
 					case SIGINT:
-						dprint(INFO,"Received SIGINT\n");
+						tdprint((void *)read_cfg,INFO,"Received SIGINT\n");
 						read_cfg->retry = KILL;
 						goto read_repeat;
 					default:
-						dprint(INFO,"Received signal %d\n, ignoring\n",signum);
+						tdprint((void *)read_cfg,INFO,"Received signal %d\n, ignoring\n",signum);
 				}
 
 			}
@@ -171,10 +183,10 @@ void * read_endpt(void * args){
 			read_cfg->exit_status = -1;
 			goto read_repeat;
 		}
-		dprint(DEBUG,"Reading\n");
+		tdprint((void *)read_cfg,DEBUG,"Reading\n");
 	
 	}else if (read_cfg->type == T_SOCKET && read_cfg->protocol == IPPROTO_UDP){
-		dprint(DEBUG,"Socket\n");
+		tdprint((void *)read_cfg,DEBUG,"Socket\n");
 		struct addrinfo hints;
 		memset(&hints,0,sizeof(struct addrinfo));
 		hints.ai_family = AF_UNSPEC;
@@ -186,7 +198,7 @@ void * read_endpt(void * args){
 		struct addrinfo * addrinfo;
 		res = getaddrinfo(NULL,read_cfg->port,&hints,&addrinfo);
 		if (res){
-			dprint(ERR,"Error when resolving %s: %s\n",read_cfg->name,gai_strerror(res));
+			tdprint((void *)read_cfg,ERR,"Error when resolving %s: %s\n",read_cfg->name,gai_strerror(res));
 			read_cfg->exit_status = -1;
 			goto read_repeat;
 		}
@@ -194,18 +206,18 @@ void * read_endpt(void * args){
 			readfd = socket(aiptr->ai_family,aiptr->ai_socktype,aiptr->ai_protocol);
 			if (readfd == -1)
 				continue;
-			dprint(DEBUG,"Binding\n");
+			tdprint((void *)read_cfg,DEBUG,"Binding\n");
 			if (bind(readfd,aiptr->ai_addr,aiptr->ai_addrlen) == 0)
 				break;
 			close(readfd);
 		}
 		freeaddrinfo(addrinfo);
 		if (readfd == -1){
-			dprint(ERR,"Could not bind to port %s\n",read_cfg->port);
+			tdprint((void *)read_cfg,ERR,"Could not bind to port %s\n",read_cfg->port);
 			read_cfg->exit_status = -1;
 			goto read_repeat;
 		}
-		dprint(DEBUG,"Reading\n");
+		tdprint((void *)read_cfg,DEBUG,"Reading\n");
 
 		if (read_cfg->test_only){
 			close(readfd);
@@ -214,7 +226,7 @@ void * read_endpt(void * args){
 		}
 
 	}else if (read_cfg->type == T_STD){
-		dprint(DEBUG,"Stdin\n");
+		tdprint((void *)read_cfg,DEBUG,"Stdin\n");
 		readfd=0;
 		if (read_cfg->test_only){
 			read_cfg->exit_status = 0;
@@ -226,7 +238,7 @@ void * read_endpt(void * args){
 	char * readbuf;
 	readbuf = malloc(sizeof(char)*READ_BUFFER_BLOCK_SIZE);
 	while (1){
-		dprint(DEBUG,"Rereading\n");
+		tdprint((void *)read_cfg,DEBUG,"Rereading\n");
 		size_t toread;
 		size_t nread;
 		toread = READ_BUFFER_BLOCK_SIZE;
@@ -242,9 +254,9 @@ void * read_endpt(void * args){
 				read_cfg->exit_status = -1;
 				goto read_repeat;
 			}
-			poll_errs(pollfds);
+			poll_errs((void *)read_cfg,pollfds);
 			if (pollfds[1].revents & POLLIN){
-				dprint(INFO,"Signal received, interrupting read\n");
+				tdprint((void *)read_cfg,INFO,"Signal received, interrupting read\n");
 				// Handle signals
 				int8_t signum;
 				int ret;
@@ -255,11 +267,11 @@ void * read_endpt(void * args){
 				}
 				switch (signum){
 					case SIGINT:
-						dprint(INFO,"Received SIGINT\n");
+						tdprint((void *)read_cfg,INFO,"Received SIGINT\n");
 						read_cfg->retry = KILL;
 						goto read_repeat;
 					default:
-						dprint(INFO,"Received signal %d\n, ignoring\n",signum);
+						tdprint((void *)read_cfg,INFO,"Received signal %d\n, ignoring\n",signum);
 				}
 
 			}
@@ -272,7 +284,7 @@ void * read_endpt(void * args){
 				from_addrlen = 14; // From sys/socket.h, is there more correct system?
 				res = recvfrom(readfd,(void *)readbuf,READ_BUFFER_BLOCK_SIZE,0,&from_addr,&from_addrlen);
 
-				dprint(INFO,"Got message from socket\n");
+				tdprint((void *)read_cfg,INFO,"Got message from socket\n");
 
 			} else {
 				res = read(readfd,(void *)(readbuf+nread),(toread-nread));
@@ -307,24 +319,23 @@ read_repeat:
 	}
 	switch(read_cfg->retry){
 		case YES:
-			dprint(INFO,"Retrying read\n");
+			tdprint((void *)read_cfg,INFO,"Retrying read\n");
 			break;
 		case KILL:
 			close(listenfd);
-			dprint(INFO,"Ending read\n");
+			tdprint((void *)read_cfg,INFO,"Ending read\n");
 			for (int i=0;i<cfg->n_outs;i++){
 				buffer_insert(cfg->outs[i].buf,NULL,BUF_KILL);
 			}
-			cfg->input->exit_status=-2;
+			read_cfg->exit_status=-2;
 			return NULL;
 		case NO:
 		case IGNORE:
 			close(listenfd);
-			dprint(INFO,"Ending read\n");
+			tdprint((void *)read_cfg,INFO,"Ending read\n");
 			for (int i=0;i<cfg->n_outs;i++){
 				buffer_insert(cfg->outs[i].buf,NULL,BUF_END_DATA);
 			}
-			cfg->input->exit_status=0;
 			return NULL;
 	
 	}
@@ -336,139 +347,150 @@ read_repeat:
 
 /* Output endpoint. Gets pointer to endpoint config in args*/
 void * write_endpt(void * args){
-	// Mask signals
-	// TODO report error codes
-	sigset_t sigset;
-	sigfillset(&sigset);
-	pthread_sigmask(SIG_BLOCK,&sigset,NULL);
-	do {
-	dprint(INFO,"Thread %p: Start writing\n",args);
+
 	struct endpt_cfg * cfg;
 	cfg = (struct endpt_cfg *)args;
-	int writefd;
-	// For use in sendto
-	struct sockaddr * addr;
-	socklen_t addrlen;
-	if (cfg->type == T_FILE){
-		writefd = open(cfg->name, O_WRONLY | O_CREAT | O_TRUNC,
-			S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-		if (writefd == -1){
-			warn("Opening file %s to write failed\n",cfg->name);
-			cfg->exit_status = -1;
-			goto write_repeat;
-		}
-		if (cfg->test_only){
-			close(writefd);
-			cfg->exit_status = 0;
-			return NULL;
-		}
 
-	
-	} else if (cfg->type == T_SOCKET){
-		struct addrinfo hints;
-		memset(&hints,0,sizeof(struct addrinfo));
-		hints.ai_family = AF_UNSPEC;
-		if (cfg->protocol == IPPROTO_TCP)
-			hints.ai_socktype = SOCK_STREAM;
-		else if (cfg->protocol == IPPROTO_UDP)
-			hints.ai_socktype = SOCK_DGRAM;
-		hints.ai_flags = 0;
-		hints.ai_protocol = 0;
-
-		int res;
-		struct addrinfo * addrinfo;
-		res = getaddrinfo(cfg->name,cfg->port,&hints,&addrinfo);
-		if (res){
-			dprint(ERR,"Error when resolving %s: %s\n",cfg->name,gai_strerror(res));
-			cfg->exit_status = -1;
-			goto write_repeat;
-		}
-		for (struct addrinfo * aiptr = addrinfo; aiptr!=NULL; aiptr=aiptr->ai_next){
-			addr = aiptr->ai_addr;
-			addrlen = aiptr->ai_addrlen;
-			writefd = socket(aiptr->ai_family,aiptr->ai_socktype,aiptr->ai_protocol);
-			if (writefd == -1)
-				continue;
-			if (cfg->protocol == IPPROTO_UDP)
-				break;
-			if (connect(writefd,addr,addrlen) != -1)
-				break;
-			close(writefd);
-			writefd = -1;
-		}
-		freeaddrinfo(addrinfo);
-		if (writefd == -1){
-			dprint(ERR,"Could not connect to %s\n",cfg->name);
-			cfg->exit_status = -1;
-			goto write_repeat;
-		}
-		if (cfg->test_only){
-			close(writefd);
-			cfg->exit_status = 0;
-			return NULL;
-		}
-	
-	} else if (cfg->type == T_STD){
-		writefd = 1;	
-		if (cfg->test_only){
-			cfg->exit_status = 0;
-			return NULL;
-		}
+	// Mask signals
+	sigset_t sigset;
+	if (sigfillset(&sigset)==-1)
+	{
+		tdprint(args,WARN,"Error in signal setup\n");
+		cfg->exit_status = -1;
+		return NULL;
+	}
+	if(pthread_sigmask(SIG_BLOCK,&sigset,NULL)){
+		tdprint(args,WARN,"Error in signal setup\n");
+		cfg->exit_status = -1;
+		return NULL;
 	}
 
-	char * writebuf;
-	while (1) {
-		size_t towrite;
-		towrite = buffer_after_delete(cfg->buf);
-		if (towrite == BUF_END_DATA){
-			cfg->exit_status = 0;
-			dprint(INFO,"Thread %p: End of data\n",args);
-			close(writefd);
-			return NULL;
-		}
-		if (towrite == BUF_KILL){
-			cfg->exit_status = -2;
-			dprint(INFO,"Thread %p: End required by signal\n",args);
-			close(writefd);
-			return NULL;
-		}
-		writebuf = buffer_cons_data_pointer(cfg->buf);
-		if (cfg->type == T_SOCKET && cfg->protocol == IPPROTO_UDP){
-			ssize_t res;
-			res = sendto(writefd,writebuf,towrite,0,addr,addrlen);
-			if (res == -1)
-				warn("Thread %p: Error while writing buffer",args);
-		} else {
-			int nwritten;
-			nwritten = 0;
-			while (nwritten < towrite){
-				ssize_t res;
-				res = write(writefd,(void *)(writebuf+nwritten),towrite-nwritten);
-				if (res < 0){
-					warn("Thread %p: Error while writing buffer:",args);
-					cfg->exit_status = -1;
-					close(writefd);
-					goto write_repeat;
-				}
-				nwritten += res;
+	do {
+		tdprint(args,INFO,"Start writing\n",args);
+		int writefd;
+		// For use in sendto
+		struct sockaddr * addr;
+		socklen_t addrlen;
+		if (cfg->type == T_FILE){
+			writefd = open(cfg->name, O_WRONLY | O_CREAT | O_TRUNC,
+				S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+			if (writefd == -1){
+				warn("Opening file %s to write failed\n",cfg->name);
+				cfg->exit_status = -1;
+				goto write_repeat;
+			}
+			if (cfg->test_only){
+				close(writefd);
+				cfg->exit_status = 0;
+				return NULL;
+			}
+
+		
+		} else if (cfg->type == T_SOCKET){
+			struct addrinfo hints;
+			memset(&hints,0,sizeof(struct addrinfo));
+			hints.ai_family = AF_UNSPEC;
+			if (cfg->protocol == IPPROTO_TCP)
+				hints.ai_socktype = SOCK_STREAM;
+			else if (cfg->protocol == IPPROTO_UDP)
+				hints.ai_socktype = SOCK_DGRAM;
+			hints.ai_flags = 0;
+			hints.ai_protocol = 0;
+
+			int res;
+			struct addrinfo * addrinfo;
+			res = getaddrinfo(cfg->name,cfg->port,&hints,&addrinfo);
+			if (res){
+				tdprint(args,ERR,"Error when resolving %s: %s\n",cfg->name,gai_strerror(res));
+				cfg->exit_status = -1;
+				goto write_repeat;
+			}
+			for (struct addrinfo * aiptr = addrinfo; aiptr!=NULL; aiptr=aiptr->ai_next){
+				addr = aiptr->ai_addr;
+				addrlen = aiptr->ai_addrlen;
+				writefd = socket(aiptr->ai_family,aiptr->ai_socktype,aiptr->ai_protocol);
+				if (writefd == -1)
+					continue;
+				if (cfg->protocol == IPPROTO_UDP)
+					break;
+				if (connect(writefd,addr,addrlen) != -1)
+					break;
+				close(writefd);
+				writefd = -1;
+			}
+			freeaddrinfo(addrinfo);
+			if (writefd == -1){
+				tdprint(args,ERR,"Could not connect to %s\n",cfg->name);
+				cfg->exit_status = -1;
+				goto write_repeat;
+			}
+			if (cfg->test_only){
+				close(writefd);
+				cfg->exit_status = 0;
+				return NULL;
+			}
+		
+		} else if (cfg->type == T_STD){
+			writefd = 1;	
+			if (cfg->test_only){
+				cfg->exit_status = 0;
+				return NULL;
 			}
 		}
-	}
-write_repeat:
-	switch (cfg->retry){
-		case YES:
-			dprint(INFO,"Thread %p: Retrying\n",args);
-			break;
-		case NO:
-			dprint(INFO,"Thread %p: Terminating\n",args);
-			return NULL;
-		case IGNORE:
-		case KILL:
-			dprint(INFO,"Thread %p: Terminating\n",args);
-			cfg->exit_status = 0;
-			return NULL;
-	}
-	sleep(RETRY_DELAY);
+
+		char * writebuf;
+		while (1) {
+			size_t towrite;
+			towrite = buffer_after_delete(cfg->buf);
+			if (towrite == BUF_END_DATA){
+				cfg->exit_status = 0;
+				tdprint(args,INFO,"End of data\n",args);
+				close(writefd);
+				return NULL;
+			}
+			if (towrite == BUF_KILL){
+				cfg->exit_status = -2;
+				tdprint(args,INFO,"End required by signal\n",args);
+				close(writefd);
+				return NULL;
+			}
+			writebuf = buffer_cons_data_pointer(cfg->buf);
+			if (cfg->type == T_SOCKET && cfg->protocol == IPPROTO_UDP){
+				ssize_t res;
+				res = sendto(writefd,writebuf,towrite,0,addr,addrlen);
+				if (res == -1)
+					warn("Error while writing buffer",args);
+			} else {
+				int nwritten;
+				nwritten = 0;
+				while (nwritten < towrite){
+					ssize_t res;
+					res = write(writefd,(void *)(writebuf+nwritten),towrite-nwritten);
+					if (res < 0){
+						warn("Error while writing buffer:",args);
+						cfg->exit_status = -1;
+						close(writefd);
+						goto write_repeat;
+					}
+					nwritten += res;
+				}
+			}
+		}
+	write_repeat:
+		switch (cfg->retry){
+			case YES:
+				tdprint(args,INFO,"Retrying\n",args);
+				break;
+			case NO:
+				tdprint(args,INFO,"Terminating\n",args);
+				return NULL;
+			case IGNORE:
+			case KILL:
+				tdprint(args,INFO,"Terminating\n",args);
+				cfg->exit_status = 0;
+				return NULL;
+		}
+		sleep(RETRY_DELAY);
 
 	} while (1);
 

@@ -5,28 +5,29 @@
 #include "netstream.h"
 #include "buffer.h"
 
-/* Insert into buffer buf ndata bytes from address data. If ndata == -1, 
- * nothing is copied and datalens is set to -1 at producers position. This
- * is used for indicating end of stream.
+/* Insert into buffer buf ndata bytes from address data. If ndata < 0, 
+ * nothing is copied and datalens is set to ndata at producers position. This
+ * is used for indicating end of stream and other special cases.
  *
- * Returns -1 if buffer is full (and nothing is inserted), 0 otherwise.
+ * If next position is position of reader, this position is skipped and data are
+ * copied to the next position.
+ *
+ * Returns 0 always.
  */
 int buffer_insert(struct buffer * buf,char * data,ssize_t ndata){
 	pthread_mutex_lock(&buf->lock);
+	dprint(DEBUG,"Buf:%p, Prod:%d, Cons:%d, Inserting:%d\n",buf,buf->prod_pos,buf->cons_pos,ndata);
 	// Buffer is full, discard data 
-	if ((buf->prod_pos+1)%buf->nitems == buf->cons_pos){
-		pthread_mutex_unlock(&buf->lock);
+	if ((buf->prod_pos+0)%buf->nitems == buf->cons_pos){
+		buf->prod_pos = (buf->prod_pos+1)%buf->nitems;
 		dprint(WARN,"Buffer %p overflow\n",buf);
-		return -1;
 	}
 	if (ndata >= 0){
 		memcpy(buf->buffer+buf->prod_pos*buf->it_size,
 			data,ndata);
-		buf->datalens[buf->prod_pos] = ndata;
-			
-	} else {
-		buf->datalens[buf->prod_pos] = ndata; 
 	}
+	buf->datalens[buf->prod_pos] = ndata;
+	
 	// Buffer was empty, signal a condition variable
 	if ((buf->cons_pos+1)%buf->nitems == buf->prod_pos){
 		pthread_cond_broadcast(&buf->empty_cv);
@@ -53,6 +54,7 @@ char * buffer_cons_data_pointer(struct buffer * buf){
  */
 int buffer_after_delete(struct buffer * buf){
 	pthread_mutex_lock(&buf->lock);
+	dprint(DEBUG,"Buf:%p, Prod:%d, Cons:%d, Returning\n",buf,buf->prod_pos,buf->cons_pos);
 	// Buffer is empty, wait until is filled
 	if ((buf->cons_pos+1)%buf->nitems == buf->prod_pos){
 		pthread_cond_wait(&buf->empty_cv,&buf->lock);
