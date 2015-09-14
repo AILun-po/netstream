@@ -251,6 +251,9 @@ void print_config(struct io_cfg * cfg){
 			case IGNORE:
 				printf("ignore\n");
 				break;
+			case KILL:
+				printf("kill\n");
+				break;
 		}
 		printf("	Name: %s\n",cfg->outs[i].name);
 		printf("	Port: %s\n",cfg->outs[i].port);
@@ -310,6 +313,9 @@ void print_config(struct io_cfg * cfg){
 		case IGNORE:
 			printf("ignore\n");
 			break;
+		case KILL:
+			printf("kill\n");
+			break;
 	}
 	printf("	Name: %s\n",cfg->input->name);
 	printf("	Port: %s\n",cfg->input->port);
@@ -366,6 +372,9 @@ static int  check_endpt(struct endpt_cfg * cfg,char num){
 				dprint(ERR,"Endpoint %d keepalive not defined\n",num);
 				return 0;
 			}
+			break;
+		case T_STD:
+			break;
 	}
 	return 1;
 
