@@ -9,11 +9,12 @@ Compilation
 ----------- 
 
 Required libraries: libyaml (http://pyyaml.org/wiki/LibYAML)
-To compile, run
+
+To compile run
 
 `$ make`
 
-netstream binary will be created.
+`netstream` binary will be created.
 
 
 Usage 
@@ -28,7 +29,31 @@ configuration file and start working.
  - `-t`		only test connection to neighbours and exit
 
 ## Configuration file syntax
-Configuration file is written in YAML. 
+Configuration file is written in YAML. It is an array of mappings. Each mapping
+describes one input or output. There can be only 1 input. Maximal number of
+outputs is defined by a constant `MAX_OUTPUTS` in the source.
+
+Compulsory keys for any endpoint
+  - `Direction`:  `input` or `output`
+  - `Type`: `socket`,`file` or `std`
+
+Optional keys for any endpoint
+  - `Retry`: `yes` for retrying after failure, `no` for exit after failure
+    (default) and `ignore` for don't exit and don't retry after failure
+
+Compulsory keys for `Type: socket`:
+  - `Name`: hostname or IP of the target computer
+  - `Port`: port number
+  - `Protocol`: `TCP` or `UDP`
+
+Optional keys for `Type: socket`:
+  - `Keepalive`: send TCP keepalive every n seconds
+
+Compulsory keys for `Type: file`:
+  - `Name`: filename
+
+If there is a syntax error in config or some compulsory keys are missing,
+program will exit with error. Unnecessary keys are ignored.
 
 Tests 
 -----
