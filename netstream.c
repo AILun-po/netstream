@@ -69,7 +69,8 @@ void help(void){
 void handle_signal(int signum){
 	int8_t bytesig;
 	bytesig = signum;
-	write(signal_fds[1],&bytesig,1);
+	if(write(signal_fds[1],&bytesig,1)){ // Only for suppress warning of unused result
+	}
 }
 
 /* Parse command line arguments into structure cfg.
@@ -157,14 +158,26 @@ int main(int argc, char ** argv){
 		return 1;
 	}
 	
-	//TODO error handling
 	struct sigaction act;
 	memset(&act,0,sizeof(struct sigaction));
-	sigfillset(&(act.sa_mask));
+	if (sigfillset(&act.sa_mask)==-1)
+	{
+		dprint(ERR,"Error in signal setup\n");
+		return 1;
+	}
 	act.sa_handler = *(handle_signal);
-	sigaction(SIGINT,&act,NULL);
-	sigaction(SIGPIPE,&act,NULL);
-//	sigaction(SIGTERM,&act,NULL);
+	if (sigaction(SIGINT,&act,NULL) == -1){
+		dprint(CRIT,"Error when setting signal handler\n");
+		return 1;
+	}
+	if (sigaction(SIGPIPE,&act,NULL) == -1){
+		dprint(CRIT,"Error when setting signal handler\n");
+		return 1;
+	}
+	if (sigaction(SIGTERM,&act,NULL) == -1){
+		dprint(CRIT,"Error when setting signal handler\n");
+		return 1;
+	}
 
 	for (int i=0;i<config.n_outs;i++){
 		config.outs[i].test_only = !!cmd_args.testonly;
@@ -188,7 +201,8 @@ int main(int argc, char ** argv){
 		int res;
 		res = daemon(1,0);
 		if (res==-1){
-			err("Daemonization failed");
+			dprint(CRIT,"Daemonization failed");
+			return 1;
 		}
 	}
 
@@ -235,7 +249,6 @@ int main(int argc, char ** argv){
 			retval = 1;
 		}
 	}
-	//TODO: Use exit_status from threads 
 
 	return retval;
 }
