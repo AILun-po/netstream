@@ -22,10 +22,10 @@ For simple use, just run `./netstream`. It will use netstream.conf as
 configuration file and start working.
 
 ## Command line options
- - `-c <file>` - use `file` as a configuration file
- - `-d` - run as a daemon
- - `-v [level]` - set verbosity (0 - quiet, 7 - most verbose)
- - `-t` - only test connection to neighbours and exit
+ - `-c <file>`  use `file` as a configuration file
+ - `-d`	 	run as a daemon
+ - `-v [level]`	set verbosity (0 - quiet, 7 - most verbose)
+ - `-t`		only test connection to neighbours and exit
 
 ## Configuration file syntax
 Configuration file is written in YAML. 
