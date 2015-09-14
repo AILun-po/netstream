@@ -60,9 +60,9 @@ struct io_cfg {
 	struct endpt_cfg * input;	// Pointer to input configuration
 };
 
-#define READ_BUFFER_BLOCK_SIZE 32
-#define WRITE_BUFFER_BLOCK_SIZE 32
-#define WRITE_BUFFER_BLOCK_COUNT 8
+#define READ_BUFFER_BLOCK_SIZE 1024
+#define WRITE_BUFFER_BLOCK_SIZE 1024
+#define WRITE_BUFFER_BLOCK_COUNT 128
 #define MAX_OUTPUTS 100			// Maximum number of outputs
 #define RETRY_DELAY 1			// Delay between retrying to connect/open file 
 
