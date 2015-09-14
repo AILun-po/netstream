@@ -12,4 +12,4 @@ $(EXE): $(OBJECTS)
 	$(LD) $(LDFLAGS) -o $@ $^ 
 
 clean:
-	rm -f $(OBJECTS)
+	rm -f $(OBJECTS) $(EXE)
