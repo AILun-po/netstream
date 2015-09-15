@@ -71,3 +71,36 @@ sleep 1
 check_result "a" 4
 kill $NC1PID >/dev/null 2>&1
 kill $NSPID >/dev/null 2>&1
+
+rm -f 6.*.out
+run_test 6 "file -> more files"
+check_result "a" "6.1"
+check_result "a" "6.2"
+check_result "a" "6.3"
+check_result "a" "6.4"
+check_result "a" "6.5"
+
+rm -f 7.out
+run_test 7 "Retry test" & >/dev/null 2>&1
+nc -l -p 3001 > 7.out & >/dev/null 2>&1
+NC1PID=$!
+sleep 5
+kill $NC1PID >/dev/null 2>&1
+if [ -s 7.out ]
+then 
+	echo -n "Retry..."
+	rm 7.out
+	nc -l -p 3001 > 7.out & >/dev/null 2>&1
+	NC1PID=$!
+	sleep 1
+	kill $NC1PID >/dev/null 2>&1
+	if [ -s 7.out ]
+	then
+		echo "OK"
+	fi
+
+else
+	echo "Failed"
+fi
+kill $NSPID >/dev/null 2>&1
+
