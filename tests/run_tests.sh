@@ -100,15 +100,10 @@ NC1PID=$!
 sleep 1
 run_test 4 "TCP -> TCP" b
 sleep 1
-nc 127.0.0.1 3000 < a.in & >/dev/null 2>&1
-NC2PID=$!
-sleep 1
-qkill $NC2PID
-sleep 1
+nc -q0 127.0.0.1 3000 < a.in & >/dev/null 2>&1
+wait
 check_result "a" 4
 print_result
-qkill $NC1PID
-qkill $NSPID
 
 # Test 5
 rm -f 5.out
@@ -117,12 +112,11 @@ NC1PID=$!
 sleep 1
 run_test 5 "UDP -> UDP" b
 sleep 1
-nc -u 127.0.0.1 3000 < a.in & >/dev/null 2>&1
-NC2PID=$!
+nc -q0 -u 127.0.0.1 3000 < a.in & >/dev/null 2>&1
+wait
 sleep 1
 check_result "a" 5
 print_result
-qkill $NC2PID 
 qkill $NC1PID
 qkill $NSPID
 
