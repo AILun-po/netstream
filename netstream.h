@@ -26,12 +26,11 @@ enum endpt_type {T_SOCKET, T_FILE, T_STD, T_INVAL};	// Endpoint type
 enum endpt_retry {NO=0,YES=1,IGNORE,KILL};			// Retry if read/write failed?
 
 // Deadlist structure for died threads
-struct deadlist {
-	struct endpt_cfg ** cfg_list;
-//	pthread_t * thr_list;
-	int pos;
-	pthread_mutex_t mtx;
-	pthread_cond_t condv;
+struct deadlist {			
+	struct endpt_cfg ** cfg_list;	// List of pointers to config of died threads
+	int pos;			// Position of the first empty slot in list
+	pthread_mutex_t mtx;		// Mutex for a list
+	pthread_cond_t condv;		// Conditional variable for a list
 };
 
 
