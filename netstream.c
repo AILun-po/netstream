@@ -206,8 +206,31 @@ int main(int argc, char ** argv){
 		}
 	}
 
+
+	struct deadlist * dlist;
+	dlist = malloc(sizeof(struct deadlist));
+	if (dlist == NULL){
+		dprint(CRIT,"Failed to allocate space for threads\n");
+		return 1;
+	}
+	pthread_mutex_init(&(dlist->mtx),NULL);
+	pthread_cond_init(&(dlist->condv),NULL);
+	dlist->cfg_list = calloc(sizeof(struct endpt_cfg *),config.n_outs+1);
+	if (dlist->cfg_list == NULL){
+		dprint(CRIT,"Failed to allocate space for threads\n");
+		return 1;
+	}
+	dlist->pos = 0;
+/*	dlist->thr_list = malloc(sizeof(pthread_t)*(config.n_outs+1));
+	if (dlist->thr_list == NULL){
+		dprint(CRIT,"Failed to allocate space for threads\n");
+		return 1;
+	}*/
+	pthread_mutex_lock(&(dlist->mtx));
+	
 	pthread_t read_thr;
 	int res;
+	config.input->dlist = dlist;
 	res = pthread_create(&read_thr,NULL,read_endpt,(void *)(&config));
 	
 	pthread_t * threads;
@@ -218,6 +241,7 @@ int main(int argc, char ** argv){
 	}
 	for (int i=0; i<config.n_outs;i++){
 		int res;
+		config.outs[i].dlist = dlist;
 		res = pthread_create(&threads[i],NULL,write_endpt,(void *)(&config.outs[i]));
 		if (res){
 			dprint(ERR,"Failed to start thread\n");
@@ -227,23 +251,39 @@ int main(int argc, char ** argv){
 
 	int retval;
 	retval = 0;
+
+	while (dlist->pos < config.n_outs + 1){
+		pthread_cond_wait(&(dlist->condv),&(dlist->mtx));
+		dprint(DEBUG,"Thread died\n");
+		for(int i=0; i<dlist->pos; i++){
+			if (dlist->cfg_list[i]->exit_status != 0){
+				dprint(WARN,"There was error in thread %p, cancelling other threads\n",
+					dlist->cfg_list[i]);
+				retval = 1;
+				pthread_cancel(read_thr);
+				for (int i=0;i<config.n_outs;i++){
+					pthread_cancel(threads[i]);
+				}
+				break;
+				
+			
+			}
+		}
+		if (retval == 1){
+			break;
+		}
+	}
+
 	res = pthread_join(read_thr,NULL);
 	if (res){
 		dprint(ERR,"Failed to join read thread:%s\n",strerror(res));
-	}
-	if (config.input->exit_status != 0){
-		dprint(WARN,"There was error in read thread, cancelling writer threads\n");
-		retval = 1;
-		for (int i=0;i<config.n_outs;i++){
-			pthread_cancel(threads[i]);
-		}
 	}
 
 	for (int i=0;i<config.n_outs;i++){
 		res = pthread_join(threads[i],NULL);
 		if (res){
 			retval = 1;
-			dprint(ERR,"Failed to join thread\n");
+			dprint(ERR,"Failed to join write thread\n");
 		}
 		if (config.outs[i].exit_status!=0){
 			retval = 1;

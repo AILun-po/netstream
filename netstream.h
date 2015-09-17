@@ -25,6 +25,15 @@ enum endpt_dir {DIR_INPUT,DIR_OUTPUT, DIR_INVAL};	// Endpoint direction
 enum endpt_type {T_SOCKET, T_FILE, T_STD, T_INVAL};	// Endpoint type
 enum endpt_retry {NO=0,YES=1,IGNORE,KILL};			// Retry if read/write failed?
 
+// Deadlist structure for died threads
+struct deadlist {
+	struct endpt_cfg ** cfg_list;
+//	pthread_t * thr_list;
+	int pos;
+	pthread_mutex_t mtx;
+	pthread_cond_t condv;
+};
+
 
 // Configuration of endpoint
 struct endpt_cfg {
@@ -38,7 +47,9 @@ struct endpt_cfg {
 	struct buffer * buf;	// Write buffer (only for output)
 	int exit_status;	// Does the reading/writing thread ended normally?
 	char test_only;		// Only perform a test of connection, then end
+	struct deadlist * dlist; // Storage of config of dead threads
 };
+
 
 // Write buffer for each output
 struct buffer {

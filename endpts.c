@@ -50,6 +50,18 @@ char poll_errs(void * id,struct pollfd * pollfds){
 	return fail;
 }
 
+void exit_thread(struct endpt_cfg * cfg, int status){
+	cfg->exit_status = status;
+	struct deadlist * dlist;
+	dlist = cfg->dlist;
+	pthread_mutex_lock(&(dlist->mtx));
+	dlist->cfg_list[dlist->pos]=cfg;
+	pthread_cond_broadcast(&(dlist->condv));
+	dlist->pos++;
+	pthread_mutex_unlock(&(dlist->mtx));
+	pthread_exit(NULL);
+} 
+
 
 /* Endpoint for input. Gets pointer to I/O config in args */
 void * read_endpt(void * args){
@@ -64,13 +76,11 @@ void * read_endpt(void * args){
 	if (sigfillset(&sigset)==-1)
 	{
 		tdprint((void *)read_cfg,WARN,"Error in signal setup\n");
-		read_cfg->exit_status = -1;
-		return NULL;
+		exit_thread(read_cfg,-1);
 	}
 	if(pthread_sigmask(SIG_BLOCK,&sigset,NULL)){
 		tdprint((void *)read_cfg,WARN,"Error in signal setup\n");
-		read_cfg->exit_status = -1;
-		return NULL;
+		exit_thread(read_cfg,-1);
 	}
 
 
@@ -92,8 +102,7 @@ void * read_endpt(void * args){
 				goto read_repeat;
 			} else if (read_cfg->test_only){
 				close(readfd);
-				read_cfg->exit_status = 0;
-				return NULL;
+				exit_thread(read_cfg,0);
 			}
 		}else if (read_cfg->type == T_SOCKET && read_cfg->protocol == IPPROTO_TCP){
 			tdprint((void *)read_cfg,DEBUG,"Socket\n");
@@ -139,8 +148,7 @@ void * read_endpt(void * args){
 			
 			if (read_cfg->test_only){
 				close(listenfd);
-				read_cfg->exit_status = 0;
-				return NULL;
+				exit_thread(read_cfg,0);
 			}
 
 			tdprint((void *)read_cfg,DEBUG,"Accepting\n");
@@ -238,16 +246,14 @@ void * read_endpt(void * args){
 
 			if (read_cfg->test_only){
 				close(readfd);
-				read_cfg->exit_status = 0;
-				return NULL;
+				exit_thread(read_cfg,0);
 			}
 
 		}else if (read_cfg->type == T_STD){
 			tdprint((void *)read_cfg,DEBUG,"Stdin\n");
 			readfd=0;
 			if (read_cfg->test_only){
-				read_cfg->exit_status = 0;
-				return NULL;
+				exit_thread(read_cfg,0);
 			}
 
 		}
@@ -333,7 +339,7 @@ void * read_endpt(void * args){
 		}
 	read_repeat:
 		if (read_cfg->test_only){
-			return NULL;
+			exit_thread(read_cfg,read_cfg->exit_status);
 		}
 		switch(read_cfg->retry){
 			case YES:
@@ -345,8 +351,7 @@ void * read_endpt(void * args){
 				for (int i=0;i<cfg->n_outs;i++){
 					buffer_insert(cfg->outs[i].buf,NULL,BUF_KILL);
 				}
-				read_cfg->exit_status=-2;
-				return NULL;
+				exit_thread(read_cfg,-2);
 			case NO:
 			case IGNORE:
 				close(listenfd);
@@ -354,13 +359,13 @@ void * read_endpt(void * args){
 				for (int i=0;i<cfg->n_outs;i++){
 					buffer_insert(cfg->outs[i].buf,NULL,BUF_END_DATA);
 				}
-				return NULL;
+				exit_thread(read_cfg,read_cfg->exit_status);
 		
 		}
 		sleep(RETRY_DELAY);
 	} while (1);
 	// Should be unreachable
-	return NULL;
+	exit_thread(read_cfg,read_cfg->exit_status);
 } 
 
 /* Output endpoint. Gets pointer to endpoint config in args*/
@@ -374,13 +379,11 @@ void * write_endpt(void * args){
 	if (sigfillset(&sigset)==-1)
 	{
 		tdprint(args,WARN,"Error in signal setup\n");
-		cfg->exit_status = -1;
-		return NULL;
+		exit_thread(cfg,-1);
 	}
 	if(pthread_sigmask(SIG_BLOCK,&sigset,NULL)){
 		tdprint(args,WARN,"Error in signal setup\n");
-		cfg->exit_status = -1;
-		return NULL;
+		exit_thread(cfg,-1);
 	}
 
 	int writefd = -1;
@@ -399,8 +402,7 @@ void * write_endpt(void * args){
 			}
 			if (cfg->test_only){
 				close(writefd);
-				cfg->exit_status = 0;
-				return NULL;
+				exit_thread(cfg,0);
 			}
 
 		
@@ -458,15 +460,13 @@ void * write_endpt(void * args){
 			}
 			if (cfg->test_only){
 				close(writefd);
-				cfg->exit_status = 0;
-				return NULL;
+				exit_thread(cfg,0);
 			}
 		
 		} else if (cfg->type == T_STD){
 			writefd = 1;	
 			if (cfg->test_only){
-				cfg->exit_status = 0;
-				return NULL;
+				exit_thread(cfg,0);
 			}
 		}
 
@@ -478,13 +478,13 @@ void * write_endpt(void * args){
 				cfg->exit_status = 0;
 				tdprint(args,INFO,"End of data\n",args);
 				close(writefd);
-				return NULL;
+				exit_thread(cfg,cfg->exit_status);
 			}
 			if (towrite == BUF_KILL){
 				cfg->exit_status = -2;
 				tdprint(args,INFO,"End required by signal\n",args);
 				close(writefd);
-				return NULL;
+				exit_thread(cfg,cfg->exit_status);
 			}
 			writebuf = buffer_cons_data_pointer(cfg->buf);
 			if (cfg->type == T_SOCKET && cfg->protocol == IPPROTO_UDP){
@@ -515,17 +515,16 @@ void * write_endpt(void * args){
 				break;
 			case NO:
 				tdprint(args,INFO,"Terminating\n",args);
-				return NULL;
+				exit_thread(cfg,cfg->exit_status);
 			case IGNORE:
 			case KILL:
 				tdprint(args,INFO,"Terminating\n",args);
-				cfg->exit_status = 0;
-				return NULL;
+				exit_thread(cfg,0);
 		}
 		sleep(RETRY_DELAY);
 
 	} while (1);
 
 	// Unreachable
-	return NULL;
+	exit_thread(cfg,cfg->exit_status);
 }
