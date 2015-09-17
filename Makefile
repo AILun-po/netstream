@@ -5,13 +5,13 @@ LDFLAGS=-lpthread -lyaml
 EXE=netstream
 OBJECTS=netstream.o buffer.o conffile.o endpts.o
 
-all: netstream
+all: $(EXE)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(EXE): $(OBJECTS)
-	$(LD) $(LDFLAGS) -o $@ $^ 
+	$(LD) $(LDFLAGS) -o $@ $(OBJECTS) 
 
 clean:
 	rm -f $(OBJECTS) $(EXE)
