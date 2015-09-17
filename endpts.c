@@ -200,6 +200,7 @@ void * read_endpt(void * args){
 				if (setsockopt(readfd, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval)) < 0){
 					tdprint((void *)read_cfg,WARN,"Could not set keepalive interval\n");
 				}
+#ifdef __linux__
 				optval = read_cfg->keepalive;
 				if (setsockopt(readfd, IPPROTO_TCP, TCP_KEEPIDLE, &optval, sizeof(optval)) < 0){
 					tdprint((void *)read_cfg,WARN,"Could not set keepalive interval\n");
@@ -207,6 +208,7 @@ void * read_endpt(void * args){
 				if (setsockopt(readfd, IPPROTO_TCP, TCP_KEEPINTVL, &optval, sizeof(optval)) < 0){
 					tdprint((void *)read_cfg,WARN,"Could not set keepalive interval\n");
 				}
+#endif
 			}
 			tdprint((void *)read_cfg,DEBUG,"Reading\n");
 		
@@ -439,6 +441,7 @@ void * write_endpt(void * args){
 					if (setsockopt(writefd, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval)) < 0){
 						tdprint(args,WARN,"Could not set keepalive interval\n");
 					}
+#ifdef __linux__
 					optval = cfg->keepalive;
 					if (setsockopt(writefd, IPPROTO_TCP, TCP_KEEPIDLE, &optval, sizeof(optval)) < 0){
 						tdprint(args,WARN,"Could not set keepalive interval\n");
@@ -446,6 +449,7 @@ void * write_endpt(void * args){
 					if (setsockopt(writefd, IPPROTO_TCP, TCP_KEEPINTVL, &optval, sizeof(optval)) < 0){
 						tdprint(args,WARN,"Could not set keepalive interval\n");
 					}
+#endif
 				}
 				if (connect(writefd,addr,addrlen) != -1)
 					break;
