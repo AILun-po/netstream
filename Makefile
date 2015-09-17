@@ -5,6 +5,8 @@ LDFLAGS=-lpthread -lyaml
 EXE=netstream
 OBJECTS=netstream.o buffer.o conffile.o endpts.o
 
+all: netstream
+
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
