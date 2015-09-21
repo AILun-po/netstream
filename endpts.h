@@ -1,10 +1,10 @@
 #ifndef ENDPTS_H
-#define ENDPTS_H
+#define	ENDPTS_H
 
 #include "netstream.h"
 
 void * read_endpt(void * args);
 void * write_endpt(void * args);
-extern int * signal_fds; 
+extern int * signal_fds;
 
 #endif
