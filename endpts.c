@@ -94,6 +94,63 @@ static void set_keepalive(int fd, struct endpt_cfg * args, int keepalive) {
 #endif
 }
 
+#define	WFE_EVT 0
+#define	WFE_SIG_TERM -1
+#define	WFE_POLL_ERR -2
+
+/*
+ * Wait for an event or a signal on listening socket.
+ */
+static int wait_for_event(void * id, char * name, int listenfd, int signalfd) {
+	struct pollfd pollfds[2];
+	pollfds[1].fd = signal_fds[0];
+	pollfds[1].events = POLLIN;
+	do  {
+		pollfds[0].fd = listenfd;
+		pollfds[0].events = POLLIN;
+		if (poll(pollfds, 2, -1) == -1) {
+			warn("Error when polling on %s", name);
+			return (WFE_POLL_ERR);
+		}
+		poll_errs(id, pollfds);
+		if (pollfds[1].revents & POLLIN) {
+			tdprint(id,
+				INFO,
+				"Signal received, interrupting %s\n",
+				name);
+			// Handle signals
+			int8_t signum;
+			int ret;
+			errno = 0;
+			ret = read(signalfd, &signum, 1);
+			if (ret == -1) {
+				warn("Error occured when"
+				"reading from signal pipe");
+			}
+			switch (signum) {
+				case SIGINT:
+				case SIGTERM:
+					tdprint(id,
+						INFO,
+						"Received SIGINT\n");
+					return (WFE_SIG_TERM);
+				default:
+					tdprint(id,
+						INFO,
+						"Received signal %d\n, "
+						"ignoring\n",
+						signum);
+			}
+
+		}
+		if (!(pollfds[0].revents & POLLIN)) {
+			continue;
+		}
+	} while (0);
+	return (WFE_EVT);
+
+}
+
 
 /* Endpoint for input. Gets pointer to I/O config in args */
 void * read_endpt(void * args) {
@@ -118,9 +175,6 @@ void * read_endpt(void * args) {
 
 	int listenfd;
 	listenfd = -1;
-	struct pollfd pollfds[2];
-	pollfds[1].fd = signal_fds[0];
-	pollfds[1].events = POLLIN;
 	int readfd;
 	readfd = -1;
 	do  {
@@ -207,46 +261,24 @@ void * read_endpt(void * args) {
 			}
 
 			tdprint((void *)read_cfg, DEBUG, "Accepting\n");
-			do  {
-				pollfds[0].fd = listenfd;
-				pollfds[0].events = POLLIN;
-				if (poll(pollfds, 2, -1) == -1) {
-					warn("Error when polling on read");
+			int res = wait_for_event((void *) read_cfg,
+				"accept",
+				listenfd,
+				signal_fds[0]);
+			switch (res) {
+				case WFE_POLL_ERR:
 					close(listenfd);
 					listenfd = -1;
 					read_cfg->exit_status = -1;
 					goto read_repeat;
-				}
-				poll_errs((void *)read_cfg, pollfds);
-				if (pollfds[1].revents & POLLIN) {
-					tdprint((void *)read_cfg,
-						INFO,
-						"Signal received,"
-						"interrupting accept\n");
-					// Handle signals
-					int8_t signum;
-					int ret;
-					errno = 0;
-					ret = read(signal_fds[0], &signum, 1);
-					if (ret == -1) {
-						warn("Error occured when"
-						"reading from signal pipe");
-					}
-					switch (signum) {
-						case SIGINT:
-						case SIGTERM:
-							tdprint((void *)read_cfg, INFO, "Received SIGINT\n");
-							read_cfg->retry = KILL;
-							goto read_repeat;
-						default:
-							tdprint((void *)read_cfg, INFO, "Received signal %d\n, ignoring\n", signum);
-					}
-
-				}
-				if (!(pollfds[0].revents & POLLIN)) {
-					continue;
-				}
-			} while (0);
+					break;
+				case WFE_SIG_TERM:
+					read_cfg->retry = KILL;
+					goto read_repeat;
+					break;
+				case WFE_EVT:
+					break;
+			}
 			readfd = accept(listenfd, NULL, NULL);
 			if (readfd == -1) {
 				warn("Could not accept on port %s:",
@@ -338,45 +370,25 @@ void * read_endpt(void * args) {
 			toread = READ_BUFFER_BLOCK_SIZE;
 			nread = 0;
 			while (nread < toread) {
-				ssize_t res;
-				pollfds[0].fd = readfd;
-				pollfds[0].events = POLLIN;
-				if (poll(pollfds, 2, -1) == -1) {
-					warn("Error when polling on read");
-					close(readfd);
-					free(readbuf);
-					read_cfg->exit_status = -1;
-					goto read_repeat;
+				int res = wait_for_event((void *) read_cfg,
+					"read",
+					readfd,
+					signal_fds[0]);
+				switch (res) {
+					case WFE_POLL_ERR:
+						close(readfd);
+						free(readbuf);
+						read_cfg->exit_status = -1;
+						goto read_repeat;
+						break;
+					case WFE_SIG_TERM:
+						read_cfg->retry = KILL;
+						goto read_repeat;
+						break;
+					case WFE_EVT:
+						break;
 				}
-				poll_errs((void *)read_cfg, pollfds);
-				if (pollfds[1].revents & POLLIN) {
-					tdprint((void *)read_cfg,
-						INFO,
-						"Signal received, "
-						"interrupting read\n");
-					// Handle signals
-					int8_t signum;
-					int ret;
-					errno = 0;
-					ret = read(signal_fds[0], &signum, 1);
-					if (ret == -1) {
-						warn("Error occured when "
-						"reading from signal pipe");
-					}
-					switch (signum) {
-						case SIGINT:
-						case SIGTERM:
-							tdprint((void *)read_cfg, INFO, "Received SIGINT\n");
-							read_cfg->retry = KILL;
-							goto read_repeat;
-						default:
-							tdprint((void *)read_cfg, INFO, "Received signal %d\n, ignoring\n", signum);
-					}
 
-				}
-				if (!(pollfds[0].revents & POLLIN)) {
-					continue;
-				}
 				if (read_cfg->type == T_SOCKET &&
 					read_cfg->protocol == IPPROTO_UDP) {
 

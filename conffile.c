@@ -186,7 +186,8 @@ int parse_config_file(struct io_cfg * config, char * filename) {
 
 		endpt_config_init(&config->outs[i]);
 
-		for (yaml_node_pair_t * ep_par = ep_params->data.mapping.pairs.start;
+		for (yaml_node_pair_t * ep_par =
+			ep_params->data.mapping.pairs.start;
 			ep_par < ep_params->data.mapping.pairs.top; ep_par++) {
 
 			yaml_node_t * key;
